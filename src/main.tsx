@@ -64,6 +64,33 @@ function Auth({onDemo}:{onDemo:()=>void}){
   return <div className="auth-page"><div className="auth-card"><div className="brand"><Shield size={36}/><div><strong>BlackBeltBootcamp</strong><span>Coach + athlete training platform</span></div></div><input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)}/><input placeholder="Password" type="password" value={password} onChange={e=>setPassword(e.target.value)}/><div className="row"><button className="primary" onClick={signIn}>Sign in</button><button onClick={signUp}>Create account</button><button onClick={onDemo}>Open demo mode</button></div><p className="muted">Create your first admin user in Supabase Authentication, or use demo mode while testing.</p>{msg&&<p className="notice">{msg}</p>}</div></div>
 }
 
+function normalizeVideoPath(path?: string) {
+  if (!path) return path;
+  return path.replace(/^Structured Workouts[\\/]+/i, '').replace(/\\/g, '/');
+}
+
+function normalizeVideoUrl(url?: string) {
+  if (!url) return url;
+  return url.replace('/exercise-videos/Structured%20Workouts/', '/exercise-videos/');
+}
+
+function VideoModal({url,title,onClose}:{url:string; title:string; onClose:()=>void}) {
+  const safeUrl = normalizeVideoUrl(url) || url;
+  return <div className="modal-backdrop" onClick={onClose}>
+    <div className="video-modal" onClick={e=>e.stopPropagation()}>
+      <div className="row between modal-head"><div><strong>{title}</strong><p className="muted">Exercise demonstration</p></div><button className="icon-btn" onClick={onClose}><X size={18}/></button></div>
+      <video className="demo-video" src={safeUrl} controls autoPlay playsInline />
+      <a className="muted" href={safeUrl} target="_blank" rel="noreferrer">Open video in new tab</a>
+    </div>
+  </div>
+}
+
+function ExerciseInstructions({instructions}:{instructions?: string}) {
+  if (!instructions) return null;
+  const lines = instructions.split('\n').filter(Boolean);
+  return <details className="instruction-details"><summary>Show written instructions</summary>{lines.length>1?<ol>{lines.map((line,i)=><li key={i}>{line}</li>)}</ol>:<p>{instructions}</p>}</details>
+}
+
 function Dashboard({data,profileId,setPage}:{data:AppData; profileId:string; setPage:(p:Page)=>void}){
   const today = new Date().toISOString().slice(0,10); const planned=data.sessions.filter(s=>s.athleteId===profileId); const completed=data.logs.length; const todaySessions=planned.filter(s=>s.date===today); const mins=data.logs.reduce((a,l)=>a+(data.sessions.find(s=>s.id===l.sessionId)?.estimatedMinutes||0),0);
   return <div className="grid"><section className="hero card span-2"><div><p className="eyebrow">Athlete command centre</p><h2>Train with structure. Track the work. Build the black belt standard.</h2><p>James’s 4-day gym manual, 15-minute footwork routine, FMA classes, badges, metrics and workout logs are all managed from here.</p><div className="row"><button className="primary" onClick={()=>setPage('workout')}>Start today</button><button onClick={()=>setPage('calendar')}>Open calendar</button></div></div><Activity size={110}/></section>
@@ -75,6 +102,11 @@ function Dashboard({data,profileId,setPage}:{data:AppData; profileId:string; set
 }
 function Metric({title,value}:{title:string; value:any}){return <section className="metric card"><span>{title}</span><strong>{value}</strong></section>}
 function SessionCard({s,data}:{s:SessionPlan;data:AppData}){return <div className="session-card"><div><strong>{s.title}</strong><p>{s.date} · {s.estimatedMinutes} mins · {s.location}</p></div><span className="tag">{s.type}</span></div>}
+
+function VideoLauncher({url,title}:{url:string; title:string}){
+  const [open,setOpen]=useState(false);
+  return <>{<button className="video-button" onClick={()=>setOpen(true)}><Video size={14}/> Watch demo</button>}{open&&<VideoModal url={url} title={title} onClose={()=>setOpen(false)}/>}</>
+}
 
 function CalendarView({data,update}:{data:AppData; update:(p:Partial<AppData>)=>void}){
   const days=[...Array(21)].map((_,i)=>{const d=new Date();d.setDate(d.getDate()+i);return d.toISOString().slice(0,10)});
@@ -93,14 +125,18 @@ function WorkoutScreen({data,update}:{data:AppData; update:(p:Partial<AppData>)=
   if(!session) return <p>No session found.</p>;
   const save=()=>{const completion = Math.round((Object.values(sets).flat().filter(x=>x.complete).length || session.exercises.length)/(session.exercises.reduce((a,e)=>a+(e.sets||1),0))*100); update({logs:[...data.logs,{id:id('log'),sessionId:session.id,athleteId:session.athleteId,date:new Date().toISOString().slice(0,10),completion:Math.min(100,completion),sets}]}); alert('Workout logged.');};
   const markExercise=(exerciseId:string, n=1)=> setSets(prev=>({ ...prev, [exerciseId]: [...Array(n)].map((_,i)=>({setNumber:i+1, complete:true})) }));
-  return <div className="grid"><section className="card span-3"><div className="row between"><h3>Workout Screen</h3><select value={selected} onChange={e=>setSelected(e.target.value)}>{data.sessions.map(s=><option key={s.id} value={s.id}>{s.date} · {s.title}</option>)}</select></div><div className="workout-head"><h2>{session.title}</h2><p>{session.date} · {session.location} · {session.estimatedMinutes} mins</p><p>{session.coachNotes}</p></div>{session.exercises.map(item=>{const ex=data.exercises.find(e=>e.id===item.exerciseId); if(!ex) return null; const count=item.sets||1; return <div className="exercise-log" key={ex.id}><div><h3>{ex.name}</h3><p>{item.sets?`${item.sets} sets · ${item.reps} · rest ${item.restSec||60}s`:`${item.durationMin||ex.durationMin} minutes`}</p><p className="muted">{ex.instructions}</p><div className="tags">{ex.bodyParts.map(b=><span key={b}>{b}</span>)}</div>{ex.videoUrl?<a target="_blank" href={ex.videoUrl}>Watch demo video</a>:<span className="video-placeholder"><Video size={16}/>Demo link can be added in Admin</span>}</div><div className="set-grid">{[...Array(count)].map((_,i)=><div key={i} className="set-row"><strong>Set {i+1}</strong><input placeholder="kg" onChange={e=>setSets(prev=>({ ...prev, [ex.id]: Object.assign([...Array(count)].map((_,j)=>prev[ex.id]?.[j]||{setNumber:j+1}),{[i]:{...(prev[ex.id]?.[i]||{setNumber:i+1}), weight:e.target.value}}) }))}/><input placeholder="reps/time" onChange={e=>setSets(prev=>({ ...prev, [ex.id]: Object.assign([...Array(count)].map((_,j)=>prev[ex.id]?.[j]||{setNumber:j+1}),{[i]:{...(prev[ex.id]?.[i]||{setNumber:i+1}), reps:e.target.value}}) }))}/><label><input type="checkbox" onChange={e=>setSets(prev=>({ ...prev, [ex.id]: Object.assign([...Array(count)].map((_,j)=>prev[ex.id]?.[j]||{setNumber:j+1}),{[i]:{...(prev[ex.id]?.[i]||{setNumber:i+1}), complete:e.target.checked}}) }))}/> Done</label></div>)}</div><button onClick={()=>markExercise(ex.id,count)}>Mark exercise complete</button></div>})}<button className="primary wide" onClick={save}>Save workout log</button></section></div>
+  return <div className="grid"><section className="card span-3"><div className="row between"><h3>Workout Screen</h3><select value={selected} onChange={e=>setSelected(e.target.value)}>{data.sessions.map(s=><option key={s.id} value={s.id}>{s.date} · {s.title}</option>)}</select></div><div className="workout-head"><h2>{session.title}</h2><p>{session.date} · {session.location} · {session.estimatedMinutes} mins</p><p>{session.coachNotes}</p></div>{session.exercises.map(item=>{const ex=data.exercises.find(e=>e.id===item.exerciseId); if(!ex) return null; const count=item.sets||1; return <div className="exercise-log" key={ex.id}><div><h3>{ex.name}</h3><p>{item.sets?`${item.sets} sets · ${item.reps} · rest ${item.restSec||60}s`:`${item.durationMin||ex.durationMin} minutes`}</p><ExerciseInstructions instructions={ex.instructions}/><div className="tags">{ex.bodyParts.map(b=><span key={b}>{b}</span>)}</div>{ex.videoUrl?<VideoLauncher url={ex.videoUrl} title={ex.name}/>:<span className="video-placeholder"><Video size={16}/>Demo link can be added in Admin</span>}</div><div className="set-grid">{[...Array(count)].map((_,i)=><div key={i} className="set-row"><strong>Set {i+1}</strong><input placeholder="kg" onChange={e=>setSets(prev=>({ ...prev, [ex.id]: Object.assign([...Array(count)].map((_,j)=>prev[ex.id]?.[j]||{setNumber:j+1}),{[i]:{...(prev[ex.id]?.[i]||{setNumber:i+1}), weight:e.target.value}}) }))}/><input placeholder="reps/time" onChange={e=>setSets(prev=>({ ...prev, [ex.id]: Object.assign([...Array(count)].map((_,j)=>prev[ex.id]?.[j]||{setNumber:j+1}),{[i]:{...(prev[ex.id]?.[i]||{setNumber:i+1}), reps:e.target.value}}) }))}/><label><input type="checkbox" onChange={e=>setSets(prev=>({ ...prev, [ex.id]: Object.assign([...Array(count)].map((_,j)=>prev[ex.id]?.[j]||{setNumber:j+1}),{[i]:{...(prev[ex.id]?.[i]||{setNumber:i+1}), complete:e.target.checked}}) }))}/> Done</label></div>)}</div><button onClick={()=>markExercise(ex.id,count)}>Mark exercise complete</button></div>})}<button className="primary wide" onClick={save}>Save workout log</button></section></div>
 }
 
 function ExerciseLibrary({data,update}:{data:AppData; update:(p:Partial<AppData>)=>void}){
   const [q,setQ]=useState(''); const [body,setBody]=useState('All'); const bodies=['All',...Array.from(new Set(data.exercises.flatMap(e=>e.bodyParts)))]; const filtered=data.exercises.filter(e=>(body==='All'||e.bodyParts.includes(body)) && [e.name,e.type,e.equipment,e.instructions].join(' ').toLowerCase().includes(q.toLowerCase()));
   return <div className="grid"><section className="card span-3"><div className="row between"><h3>Exercise Directory</h3><div className="row"><input placeholder="Search exercise" value={q} onChange={e=>setQ(e.target.value)}/><select value={body} onChange={e=>setBody(e.target.value)}>{bodies.map(b=><option key={b}>{b}</option>)}</select></div></div><div className="exercise-grid">{filtered.map(ex=><ExerciseCard key={ex.id} ex={ex}/>)}</div></section><AddExercise data={data} update={update}/></div>
 }
-function ExerciseCard({ex}:{ex:Exercise}){return <div className="exercise-card"><div className="row between"><h3>{ex.name}</h3><span className="tag">{ex.type}</span></div><p>{ex.instructions}</p><p className="muted">{ex.equipment} · {ex.location} · {ex.difficulty}</p><div className="tags">{ex.muscles.map(m=><span key={m}>{m}</span>)}</div>{ex.videoUrl?<a href={ex.videoUrl} target="_blank">Demo video</a>:<span className="video-placeholder"><Video size={14}/>No demo yet</span>}</div>}
+function ExerciseCard({ex}:{ex:Exercise}){
+  const [video,setVideo]=useState<string|null>(null);
+  const videoUrl = normalizeVideoUrl(ex.videoUrl);
+  return <div className="exercise-card"><div className="row between"><h3>{ex.name}</h3><span className="tag">{ex.type}</span></div><ExerciseInstructions instructions={ex.instructions}/><p className="muted">{ex.equipment} · {ex.location} · {ex.difficulty}</p><div className="tags">{ex.muscles.map(m=><span key={m}>{m}</span>)}</div>{videoUrl?<button className="video-button" onClick={()=>setVideo(videoUrl)}><Video size={14}/> Watch demo</button>:<span className="video-placeholder"><Video size={14}/>No demo yet</span>}{video&&<VideoModal url={video} title={ex.name} onClose={()=>setVideo(null)}/>}</div>
+}
 function AddExercise({data,update}:{data:AppData; update:(p:Partial<AppData>)=>void}){const [name,setName]=useState(''); const [videoUrl,setVideo]=useState(''); const add=()=>{if(!name.trim())return; const ex:Exercise={id:id('ex'),name,type:'Strength',location:'Gym',equipment:'TBC',bodyParts:['Full Body'],muscles:['TBC'],difficulty:'Beginner',instructions:'Add coaching notes and standards.',videoUrl,source:'Admin'}; update({exercises:[...data.exercises,ex]}); setName(''); setVideo('');}; return <section className="card"><h3>Admin quick add</h3><input placeholder="Exercise name" value={name} onChange={e=>setName(e.target.value)}/><input placeholder="Demo video URL" value={videoUrl} onChange={e=>setVideo(e.target.value)}/><button className="primary" onClick={add}>Add exercise</button></section>}
 
 function WorkoutBuilder({data,update}:{data:AppData; update:(p:Partial<AppData>)=>void}){const [title,setTitle]=useState('My Custom Workout'); const [selected,setSelected]=useState<string[]>([]); const add=()=>{if(!selected.length)return; const sess:SessionPlan={id:id('custom'),title,date:new Date().toISOString().slice(0,10),type:'Strength',location:'Gym',estimatedMinutes:45,athleteId:data.selectedProfileId,coachNotes:'Built from the exercise library.',exercises:selected.map(exerciseId=>({exerciseId,sets:3,reps:'10-12',restSec:75}))}; update({sessions:[...data.sessions,sess]}); alert('Workout added to today.');}; return <div className="grid"><section className="card span-2"><h3>Workout Builder</h3><input value={title} onChange={e=>setTitle(e.target.value)}/><div className="exercise-list">{data.exercises.map(e=><label key={e.id}><input type="checkbox" checked={selected.includes(e.id)} onChange={ev=>setSelected(prev=>ev.target.checked?[...prev,e.id]:prev.filter(x=>x!==e.id))}/>{e.name}<span>{e.type}</span></label>)}</div><button className="primary" onClick={add}>Save and schedule today</button></section><section className="card"><h3>Selected</h3>{selected.map(x=>data.exercises.find(e=>e.id===x)?.name).map(n=><p key={n}>{n}</p>)}</section></div>}
@@ -164,11 +200,12 @@ function ExerciseImportPage({data,update}:{data:AppData; update:(p:Partial<AppDa
     return 'Beginner';
   };
   const videoUrlFor = (record: ImportExerciseRecord) => {
-    if(!record.videoPath) return undefined;
-    if(supabase) return supabase.storage.from('exercise-videos').getPublicUrl(record.videoPath).data.publicUrl;
+    const cleanPath = normalizeVideoPath(record.videoPath);
+    if(!cleanPath) return undefined;
+    if(supabase) return supabase.storage.from('exercise-videos').getPublicUrl(cleanPath).data.publicUrl;
     const base = import.meta.env.VITE_SUPABASE_URL;
-    if(!base) return record.videoPath;
-    return `${base}/storage/v1/object/public/exercise-videos/${record.videoPath.split('/').map(encodeURIComponent).join('/')}`;
+    if(!base) return cleanPath;
+    return `${base}/storage/v1/object/public/exercise-videos/${cleanPath.split('/').map(encodeURIComponent).join('/')}`;
   };
 
   const importLocal = () => {
@@ -189,7 +226,7 @@ function ExerciseImportPage({data,update}:{data:AppData; update:(p:Partial<AppDa
       instructions: (r.instructions || []).join('\n'),
       description: r.description,
       videoUrl: videoUrlFor(r),
-      videoPath: r.videoPath,
+      videoPath: normalizeVideoPath(r.videoPath),
       source: r.sourceFile
     }));
     update({exercises:[...data.exercises, ...imported]});
@@ -217,7 +254,7 @@ function ExerciseImportPage({data,update}:{data:AppData; update:(p:Partial<AppDa
           body_parts: [r.bodyPart].filter(Boolean),
           muscles: [r.target, ...(r.secondaryMuscles || [])].filter(Boolean),
           video_url: videoUrlFor(r),
-          video_path: r.videoPath,
+          video_path: normalizeVideoPath(r.videoPath),
           source: r.sourceFile,
           archived: false
         }));
@@ -237,7 +274,7 @@ function ExerciseImportPage({data,update}:{data:AppData; update:(p:Partial<AppDa
   return <div className="grid">
     <section className="card span-3">
       <h3>Exercise Video Importer</h3>
-      <p className="muted">This importer uses the bundled JSON catalogue and your Supabase Storage bucket named <strong>exercise-videos</strong>. Videos are matched from the structured destination paths in the sort report, so subfolders are fully supported.</p>
+      <p className="muted">This importer uses the bundled JSON catalogue and your Supabase Storage bucket named <strong>exercise-videos</strong>. Videos are matched from the structured destination paths in the sort report. The importer automatically removes the local “Structured Workouts/” parent folder and supports all Supabase subfolders.</p>
       <div className="row"><button className="primary" onClick={loadCatalog} disabled={busy}>Load catalogue</button><button onClick={importLocal} disabled={!catalog.length || busy}>Import to app demo data</button><button onClick={importSupabase} disabled={!catalog.length || busy}>Import / upsert to Supabase</button></div>
       <p className="notice">{status}</p>
     </section>
