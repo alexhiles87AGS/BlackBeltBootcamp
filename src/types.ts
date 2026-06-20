@@ -1,17 +1,28 @@
 export type UserRole = 'admin' | 'coach' | 'athlete';
 
+export type AppUser = {
+  id: string;
+  email: string;
+  password?: string;
+  name: string;
+  role: UserRole;
+  athlete_id?: string;
+};
+
 export type AthleteProfile = {
   id: string;
   name: string;
   email?: string;
   role: UserRole;
   age?: number;
+  date_of_birth?: string;
   height_cm?: number;
   weight_kg?: number;
   belt_rank?: string;
   gym?: string;
   goal?: string;
   competition_weight_kg?: number;
+  profile_photo_url?: string;
 };
 
 export type Exercise = {
@@ -52,25 +63,41 @@ export type WorkoutPlan = {
   id: string;
   name: string;
   focus: string;
+  session_type?: SessionType;
+  location?: string;
   exercises: ProgrammeExercise[];
 };
 
+export type SessionType = 'Home' | 'Gym' | 'FMA' | 'MMA' | 'BJJ' | 'Boxing' | 'Kickboxing' | 'Cardio' | 'Mobility' | 'Physio' | 'Recovery' | 'Strength';
+
 export type CalendarEvent = {
   id: string;
-  date: string;
+  date: string; // ISO date or weekday label for seed data
   title: string;
-  type: 'strength' | 'mma' | 'bjj' | 'boxing' | 'kickboxing' | 'cardio' | 'mobility' | 'physio' | 'fma';
+  type: SessionType;
   time?: string;
+  end_time?: string;
   status: 'planned' | 'completed' | 'missed';
+  workout_plan_id?: string;
+  class_name?: string;
+};
+
+export type ExerciseLogSet = {
+  set_number: number;
+  reps?: string;
+  weight?: string;
+  completed?: boolean;
 };
 
 export type WorkoutLog = {
   id: string;
+  session_id?: string;
   date: string;
+  session_type?: SessionType;
   exercise_id: string;
   exercise_name: string;
-  sets: number;
-  reps: string;
+  sets: ExerciseLogSet[];
+  reps?: string;
   weight?: string;
   rpe?: number;
   notes?: string;

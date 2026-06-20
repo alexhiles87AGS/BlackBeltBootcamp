@@ -1,45 +1,55 @@
-# BlackBeltBootcamp V2
+# BlackBeltBootcamp V2.2
 
-Supabase-first training platform for James's gym, MMA/BJJ, footwork, flexibility and FMA training.
+A polished private-beta athlete training platform for James Hiles.
 
-## Deploy
+## Major V2.2 Changes
+
+- App now starts with a login screen.
+- Includes James demo login and Alex admin login.
+- Login persists until sign out.
+- Removed the role switcher and replaced it with Auth-ready user roles.
+- Hamburger menu / drawer navigation replaces the permanently visible sidebar.
+- Dashboard focuses on the athlete: today, next session, completion, streaks and badges.
+- Weekly training calendar with clickable sessions.
+- Session completion page with date selector, exercise list, demo video modal, body-part details, set/reps/weight logging and quick complete.
+- Cleaner exercise cards with title case, no exercise ID shown, no link text, no empty instruction placeholder.
+- Instructions/descriptions live inside the Instructions panel only.
+- Body-part-first workout builder with title-cased body parts.
+- FMA classes can be added to the calendar with date and time.
+- Stats include exercises completed, sessions completed, streak and this-week session type counters.
+- Profile fields include labels and helper text.
+- Admin can create athlete demo accounts.
+- Admin/coach can manually add exercises and link demo URLs.
+- Missing video manager allows specific replacement URLs.
+- Exercise import system retained.
+
+## Demo Credentials
+
+James Athlete:
+- Email: james@blackbeltbootcamp.app
+- Password: james123
+
+Alex Admin:
+- Email: alex@blackbeltbootcamp.app
+- Password: admin123
+
+## Install
 
 ```bash
 npm install
 npm run build
-git add .
-git commit -m "Install BlackBeltBootcamp V2"
-git push
 ```
 
-Netlify:
-- Build command: `npm run build`
-- Publish directory: `dist`
-- Node version: `20`
+## Supabase
 
-Environment variables:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+Run:
 
-## Supabase setup
+```text
+supabase/schema_v22.sql
+```
 
-1. Open Supabase SQL Editor.
-2. Run `supabase/schema_v2.sql`.
-3. Confirm Storage bucket `exercise-videos` is public.
-4. Open the app > Admin > Exercise Import.
-5. Click **Load catalogue**, then **Import catalogue to Supabase**.
+The schema is migration-safe and adds the V2.2 tables/columns without deleting your existing exercise catalogue.
 
-## Video paths
+## Production Note
 
-The V2 importer removes the local parent folder `Structured Workouts/` automatically and stores paths like:
-
-`100 Gym Female/upper legs/glutes/strength/intermediate/1262 - barbell kickback.mp4`
-
-The video player opens videos inside the app in a modal.
-
-
-## V2.1.1 QA Polish
-
-This package adds a user-focused dashboard, tighter exercise cards, and ensures written exercise instructions and descriptions stay inside the expandable Instructions tab. It keeps the body-part-first workout builder and Supabase-backed exercise catalogue from V2.1.
-
-Production note: the schema still includes development-friendly RLS policies for rapid setup. Before sharing beyond family/friends, replace those policies with authenticated admin/coach/athlete policies.
+This is now suitable for James to start using as a private beta. Before sharing publicly, complete full Supabase Auth invitations, tighter RLS role policies, and server-side user creation for admin-created athletes.
