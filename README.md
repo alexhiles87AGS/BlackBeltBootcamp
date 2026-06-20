@@ -36,3 +36,10 @@ The V2 importer removes the local parent folder `Structured Workouts/` automatic
 `100 Gym Female/upper legs/glutes/strength/intermediate/1262 - barbell kickback.mp4`
 
 The video player opens videos inside the app in a modal.
+
+
+## V2.1.1 QA Polish
+
+This package adds a user-focused dashboard, tighter exercise cards, and ensures written exercise instructions and descriptions stay inside the expandable Instructions tab. It keeps the body-part-first workout builder and Supabase-backed exercise catalogue from V2.1.
+
+Production note: the schema still includes development-friendly RLS policies for rapid setup. Before sharing beyond family/friends, replace those policies with authenticated admin/coach/athlete policies.
