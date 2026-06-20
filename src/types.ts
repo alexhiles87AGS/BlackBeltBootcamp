@@ -1,74 +1,32 @@
-export type Role = 'admin' | 'coach' | 'athlete';
-export type ExerciseType = 'Strength' | 'Cardio' | 'Mobility' | 'Physio' | 'Footwork' | 'MMA' | 'Boxing' | 'Kickboxing' | 'BJJ' | 'Recovery';
-export type Location = 'Home' | 'Gym' | 'FMA Chester' | 'Outdoors' | 'Other';
-
-export interface Profile {
-  id: string;
-  email: string;
-  displayName: string;
-  role: Role;
-  heightCm?: number;
-  weightKg?: number;
-  dateOfBirth?: string;
-  primarySport?: string;
-  goals?: string;
-  injuryNotes?: string;
-}
-
-export interface Exercise {
-  id: string;
+export type Exercise = {
+  id?: string;
+  exercise_id: string;
   name: string;
-  type: ExerciseType;
-  location: Location;
-  equipment: string;
-  bodyParts: string[];
-  muscles: string[];
-  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
-  instructions: string;
-  videoUrl?: string;
-  source?: string;
-  sourceId?: string;
-  sourceFile?: string;
-  videoPath?: string;
-  importUid?: string;
   description?: string;
-  durationMin?: number;
-}
+  body_part?: string;
+  target?: string;
+  secondary_muscles?: string[];
+  equipment?: string;
+  difficulty?: string;
+  category?: string;
+  location?: string;
+  source_file?: string;
+  source_label?: string;
+  sources?: string[];
+  video_path?: string | null;
+  video_url?: string | null;
+  thumbnail_url?: string | null;
+  has_video?: boolean;
+  is_archived?: boolean;
+  archived?: boolean;
+  instructions?: string[];
+};
 
-export interface WorkoutExercise {
-  exerciseId: string;
-  sets?: number;
-  reps?: string;
-  weight?: string;
-  restSec?: number;
-  durationMin?: number;
+export type ProgrammeExercise = {
+  exercise_id: string;
+  name: string;
+  planned_sets?: number;
+  planned_reps?: string;
+  planned_weight?: string;
   notes?: string;
-}
-
-export interface SessionPlan {
-  id: string;
-  title: string;
-  date: string;
-  type: ExerciseType | 'Gym' | 'Class' | 'Rest';
-  location: Location;
-  estimatedMinutes: number;
-  athleteId: string;
-  coachNotes?: string;
-  exercises: WorkoutExercise[];
-  completed?: boolean;
-}
-
-export interface WorkoutLogSet { setNumber: number; reps?: string; weight?: string; time?: string; distance?: string; rpe?: string; complete?: boolean; }
-export interface WorkoutLog {
-  id: string;
-  sessionId: string;
-  athleteId: string;
-  date: string;
-  completion: number;
-  notes?: string;
-  sets: Record<string, WorkoutLogSet[]>;
-}
-
-export interface Badge { id: string; name: string; description: string; icon: string; rule: string; }
-export interface ClassSchedule { id: string; name: string; day: string; time: string; durationMin: number; level: string; location: 'FMA Chester'; category: ExerciseType; }
-export interface BodyMetric { id: string; athleteId: string; date: string; weightKg?: number; heightCm?: number; bodyFat?: number; sleep?: number; energy?: number; notes?: string; }
+};

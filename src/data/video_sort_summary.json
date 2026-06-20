@@ -1,0 +1,153 @@
+{
+  "records": 1659,
+  "unique_record_ids": 1557,
+  "video_ids_found": 1604,
+  "videos_found": 1705,
+  "moves_planned": 1653,
+  "missing_records": 6,
+  "duplicate_video_ids": 101,
+  "records_by_file": {
+    "100gymfemale.json": 100,
+    "130gymworkouts.json": 131,
+    "130workouts.json": 134,
+    "200gymfemale.json": 154,
+    "200workouts.json": 200,
+    "400homeworkout.json": 401,
+    "face.json": 60,
+    "office.json": 70,
+    "pilate.json": 66,
+    "wallpilate.json": 70,
+    "Yoga.json": 71,
+    "100workouts.json": 102,
+    "100gymworkouts.json": 100
+  },
+  "planned_by_file": {
+    "100gymfemale.json": 100,
+    "130gymworkouts.json": 131,
+    "130workouts.json": 134,
+    "200gymfemale.json": 150,
+    "200workouts.json": 200,
+    "400homeworkout.json": 400,
+    "face.json": 60,
+    "office.json": 70,
+    "pilate.json": 65,
+    "wallpilate.json": 70,
+    "Yoga.json": 71,
+    "100workouts.json": 102,
+    "100gymworkouts.json": 100
+  },
+  "missing_sample": [
+    {
+      "source_file": "200gymfemale.json",
+      "id": "1447",
+      "title": "single-leg leg press"
+    },
+    {
+      "source_file": "200gymfemale.json",
+      "id": "1453",
+      "title": "cable lateral raise"
+    },
+    {
+      "source_file": "200gymfemale.json",
+      "id": "1493",
+      "title": "captain's chair leg raise"
+    },
+    {
+      "source_file": "200gymfemale.json",
+      "id": "1513",
+      "title": "arm swings (cross body)"
+    },
+    {
+      "source_file": "400homeworkout.json",
+      "id": "0672",
+      "title": "standing upper body rotation"
+    },
+    {
+      "source_file": "pilate.json",
+      "id": "1114",
+      "title": "the hundred"
+    }
+  ],
+  "duplicate_sample": {
+    "1107": [
+      "100 Workouts\\100 Workouts\\1107.mp4",
+      "Home Pilate\\Home Pilate\\CORE & ABS PILATES\\1107.mp4"
+    ],
+    "1108": [
+      "100 Workouts\\100 Workouts\\1108.mp4",
+      "Home Pilate\\Home Pilate\\CORE & ABS PILATES\\1108.mp4"
+    ],
+    "1109": [
+      "100 Workouts\\100 Workouts\\1109.mp4",
+      "Home Pilate\\Home Pilate\\CORE & ABS PILATES\\1109.mp4"
+    ],
+    "1110": [
+      "100 Workouts\\100 Workouts\\1110.mp4",
+      "Home Pilate\\Home Pilate\\CORE & ABS PILATES\\1110.mp4"
+    ],
+    "1111": [
+      "100 Workouts\\100 Workouts\\1111.mp4",
+      "Home Pilate\\Home Pilate\\CORE & ABS PILATES\\1111.mp4"
+    ],
+    "1112": [
+      "100 Workouts\\100 Workouts\\1112.mp4",
+      "Home Pilate\\Home Pilate\\CORE & ABS PILATES\\1112.mp4"
+    ],
+    "1113": [
+      "100 Workouts\\100 Workouts\\1113.mp4",
+      "Home Pilate\\Home Pilate\\CORE & ABS PILATES\\1113.mp4"
+    ],
+    "1115": [
+      "100 Workouts\\100 Workouts\\1115.mp4",
+      "Home Pilate\\Home Pilate\\FULL BODY PILATES\\1115.mp4"
+    ],
+    "1116": [
+      "100 Workouts\\100 Workouts\\1116.mp4",
+      "Home Pilate\\Home Pilate\\FULL BODY PILATES\\1116.mp4"
+    ],
+    "1117": [
+      "100 Workouts\\100 Workouts\\1117.mp4",
+      "Home Pilate\\Home Pilate\\FULL BODY PILATES\\1117.mp4"
+    ],
+    "1118": [
+      "100 Workouts\\100 Workouts\\1118.mp4",
+      "Home Pilate\\Home Pilate\\FULL BODY PILATES\\1118.mp4"
+    ],
+    "1119": [
+      "100 Workouts\\100 Workouts\\1119.mp4",
+      "Home Pilate\\Home Pilate\\FULL BODY PILATES\\1119.mp4"
+    ],
+    "1120": [
+      "100 Workouts\\100 Workouts\\1120.mp4",
+      "Home Pilate\\Home Pilate\\FULL BODY PILATES\\1120.mp4"
+    ],
+    "1121": [
+      "100 Workouts\\100 Workouts\\1121.mp4",
+      "Home Pilate\\Home Pilate\\FULL BODY PILATES\\1121.mp4"
+    ],
+    "1122": [
+      "100 Workouts\\100 Workouts\\1122.mp4",
+      "Home Pilate\\Home Pilate\\FULL BODY PILATES\\1122.mp4"
+    ],
+    "1123": [
+      "100 Workouts\\100 Workouts\\1123.mp4",
+      "Home Pilate\\Home Pilate\\FULL BODY PILATES\\1123.mp4"
+    ],
+    "1124": [
+      "100 Workouts\\100 Workouts\\1124.mp4",
+      "Home Pilate\\Home Pilate\\FULL BODY PILATES\\1124.mp4"
+    ],
+    "1125": [
+      "100 Workouts\\100 Workouts\\1125.mp4",
+      "Home Pilate\\Home Pilate\\LOWER BODY\\1125.mp4"
+    ],
+    "1126": [
+      "100 Workouts\\100 Workouts\\1126.mp4",
+      "Home Pilate\\Home Pilate\\LOWER BODY\\1126.mp4"
+    ],
+    "1127": [
+      "100 Workouts\\100 Workouts\\1127.mp4",
+      "Home Pilate\\Home Pilate\\LOWER BODY\\1127.mp4"
+    ]
+  }
+}
