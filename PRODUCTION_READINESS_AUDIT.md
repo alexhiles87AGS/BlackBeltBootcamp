@@ -1,40 +1,43 @@
-# BlackBeltBootcamp V2.1.1 Production Readiness Audit
+# BlackBeltBootcamp V2.2 Production Readiness Audit
 
-## Checked and improved
+## Implemented
 
-- Exercise instructions are no longer visible on the card by default.
-- Exercise description and written instructions are contained inside the expandable Instructions panel.
-- Video demos continue to open inside the in-app modal.
-- Workout Builder remains body-part-first so the user selects a body part before choosing exercises.
-- Dashboard has been redesigned around James and daily training outcomes rather than app features.
-- Supabase video path correction is preserved.
-- Exercise catalogue remains Supabase-backed after import.
-- Build test passed with npm run build.
+- Netlify-ready Vite/React deployment.
+- Supabase exercise catalogue support.
+- Exercise videos stored in Supabase Storage and played in-app.
+- Login screen with persistent local session.
+- Demo athlete and admin profiles.
+- Auth-ready role structure: admin, coach, athlete.
+- Hamburger drawer navigation for a more app-like experience.
+- User-focused dashboard.
+- Weekly calendar and workout completion page.
+- Exercise logging with sets, reps, weight, and quick completion.
+- Exercise Library polish: title case, hidden IDs, cleaner cards, collapsible instructions.
+- Body-part-first workout builder.
+- FMA class scheduling flow.
+- Stats counters and weekly session type breakdown.
+- Profile helper labels.
+- Manual exercise creation.
+- Missing video manager.
+- Athlete creation area.
 
-## Included product areas
+## Remaining Before Commercial Release
 
-- Athlete dashboard
-- Today's workout logger
-- Exercise Library
-- In-app video modal
-- Body-part-first workout builder
-- FMA class planner
-- Calendar
-- Profile/BMI
-- Badges
-- Stats
-- Admin overview
-- Supabase schema for V2.1 platform tables
+- Replace demo/local account creation with secure server-side Supabase Auth invitations.
+- Tighten RLS policies so only admins/coaches can create users/exercises/programmes.
+- Persist all workout/session/profile edits to Supabase, not only local private beta storage.
+- Add automated tests and route-based navigation.
+- Add mobile QA across iOS/Android browsers.
+- Add error monitoring and backup/export routines.
 
-## Still required before a wider public/friends-and-family release
+## Current Status
 
-- Replace demo role switcher with Supabase Auth sign-in and role-based routing.
-- Tighten RLS policies so only admins/coaches can import or edit catalogue data.
-- Persist programme builder, calendar edits, logs and profile updates directly to Supabase instead of local demo storage.
-- Add validation, loading states, toasts and stronger error handling for all write actions.
-- Split the large app bundle using route-level code splitting before heavy growth.
-- Add automated tests for import, workout logging, programme building and auth roles.
+Private beta ready for James. Not yet hardened for broad public release.
 
-## Conclusion
 
-This is now a strong V2.1.1 working product build and a good private beta foundation. It is not yet a fully hardened commercial production app until authentication, role security and full Supabase persistence are completed.
+## V2.2.1 focused verification
+
+- Confirmed this package is based on the user-attached V2.2 app-like build.
+- Applied mobile/iPhone visual polish via CSS only where possible.
+- Updated FMA behaviour so class sessions do not generate individual exercise logs.
+- Preserved the existing V2.2 app-like structure and avoided broad rewrites.
