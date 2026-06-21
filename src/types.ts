@@ -111,11 +111,34 @@ export type WorkoutLog = {
   completed: boolean;
 };
 
-export type Badge = {
+export type AchievementType =
+  | 'sessions_completed'
+  | 'exercises_completed'
+  | 'workout_streak'
+  | 'fma_sessions'
+  | 'gym_sessions'
+  | 'home_sessions'
+  | 'bjj_sessions'
+  | 'kickboxing_sessions'
+  | 'mobility_sessions'
+  | 'strength_exercises'
+  | 'footwork_sessions'
+  | 'completed_workouts';
+
+export type BadgeDefinition = {
   id: string;
   name: string;
   description: string;
   icon: string;
+  badge_type: AchievementType;
+  target_value: number;
+  xp_value?: number;
+  is_active?: boolean;
+  remote_id?: string;
+};
+
+export type Badge = BadgeDefinition & {
   unlocked: boolean;
   progress: number;
+  current_count: number;
 };

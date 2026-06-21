@@ -9,7 +9,7 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import { supabase, buildVideoUrl } from './supabaseClient';
 import catalogue from './data/exercise_catalogue.json';
 import summary from './data/video_sort_summary.json';
-import type { AppUser, AthleteProfile, Badge, CalendarEvent, Exercise, ExerciseLogSet, ProgrammeExercise, SessionType, WorkoutLog, WorkoutPlan } from './types';
+import type { AppUser, AthleteProfile, Badge, BadgeDefinition, AchievementType, CalendarEvent, Exercise, ExerciseLogSet, ProgrammeExercise, SessionType, WorkoutLog, WorkoutPlan } from './types';
 import './styles.css';
 
 const localCatalogue = catalogue as Exercise[];
@@ -30,7 +30,7 @@ const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[] 
   { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'] },
 ];
 
-const APP_VERSION = '2.2.13-gmt-clean-start-admin-delete';
+const APP_VERSION = '2.2.14-achievement-manager';
 
 const cleanProfiles: AthleteProfile[] = [
   {
@@ -68,13 +68,28 @@ const starter: Exercise[] = [
   { exercise_id: 'starter-2', name: 'plank', description: 'A static core exercise to build bracing and trunk endurance.', equipment:'body weight', category:'strength', difficulty:'beginner', body_part:'waist', target:'abs', location:'Home', secondary_muscles:['glutes'], instructions:['Place forearms under shoulders.','Brace abs and glutes.','Hold a straight line while breathing.'] },
 ];
 
-const initialBadges: Badge[] = [
-  { id:'b1', name:'First Workout', icon:'🏁', description:'Complete the first logged workout.', unlocked:false, progress:0 },
-  { id:'b2', name:'7 Day Streak', icon:'🔥', description:'Train seven days in a row.', unlocked:false, progress:0 },
-  { id:'b3', name:'Footwork Focus', icon:'⚡', description:'Complete 30 footwork sessions.', unlocked:false, progress:0 },
-  { id:'b4', name:'FMA Regular', icon:'🥋', description:'Attend 25 FMA classes.', unlocked:false, progress:0 },
-  { id:'b5', name:'Strength Builder', icon:'💪', description:'Log 50 strength or gym exercises.', unlocked:false, progress:0 },
-  { id:'b6', name:'Fight Camp Ready', icon:'🏆', description:'Complete 20 planned training sessions.', unlocked:false, progress:0 },
+const ACHIEVEMENT_TYPES: { value: AchievementType; label: string; help: string }[] = [
+  { value:'sessions_completed', label:'Sessions Completed', help:'Counts all completed diary sessions.' },
+  { value:'completed_workouts', label:'Completed Workouts', help:'Counts completed workout sessions assigned from a saved workout.' },
+  { value:'exercises_completed', label:'Exercises Completed', help:'Counts completed exercise log entries.' },
+  { value:'workout_streak', label:'Workout Streak', help:'Counts consecutive training days.' },
+  { value:'fma_sessions', label:'FMA Sessions', help:'Counts completed FMA/class sessions.' },
+  { value:'gym_sessions', label:'Gym Sessions', help:'Counts completed gym sessions.' },
+  { value:'home_sessions', label:'Home Sessions', help:'Counts completed home sessions.' },
+  { value:'bjj_sessions', label:'BJJ Sessions', help:'Counts completed BJJ/grappling sessions.' },
+  { value:'kickboxing_sessions', label:'Kickboxing Sessions', help:'Counts completed kickboxing sessions.' },
+  { value:'mobility_sessions', label:'Mobility / Recovery Sessions', help:'Counts completed mobility, recovery and physio sessions.' },
+  { value:'strength_exercises', label:'Strength Exercises Logged', help:'Counts completed gym/strength exercise logs.' },
+  { value:'footwork_sessions', label:'Footwork Sessions', help:'Counts completed sessions or exercises with footwork in the title/name.' },
+];
+
+const initialBadges: BadgeDefinition[] = [
+  { id:'b1', name:'First Workout', icon:'🏁', description:'Complete the first logged workout.', badge_type:'sessions_completed', target_value:1, xp_value:10, is_active:true },
+  { id:'b2', name:'7 Day Streak', icon:'🔥', description:'Train seven days in a row.', badge_type:'workout_streak', target_value:7, xp_value:50, is_active:true },
+  { id:'b3', name:'Footwork Focus', icon:'⚡', description:'Complete 30 footwork sessions.', badge_type:'footwork_sessions', target_value:30, xp_value:75, is_active:true },
+  { id:'b4', name:'FMA Regular', icon:'🥋', description:'Attend 25 FMA classes.', badge_type:'fma_sessions', target_value:25, xp_value:100, is_active:true },
+  { id:'b5', name:'Strength Builder', icon:'💪', description:'Log 50 strength or gym exercises.', badge_type:'strength_exercises', target_value:50, xp_value:100, is_active:true },
+  { id:'b6', name:'Fight Camp Ready', icon:'🏆', description:'Complete 20 planned training sessions.', badge_type:'completed_workouts', target_value:20, xp_value:150, is_active:true },
 ];
 
 const fmaClasses = [
@@ -297,6 +312,81 @@ function mapRemoteAthleteToLocal(a: any): AthleteProfile {
   } as AthleteProfile;
 }
 
+
+function isActiveBadge(b: any){ return b?.is_active === undefined || b?.is_active === null || b?.is_active === true; }
+function isSupportedAchievementType(value: any): value is AchievementType {
+  return ACHIEVEMENT_TYPES.some(t => t.value === value);
+}
+function mapRemoteBadgeToLocal(b: any): BadgeDefinition {
+  const type = isSupportedAchievementType(b?.badge_type) ? b.badge_type : 'sessions_completed';
+  return {
+    id: b?.id || crypto.randomUUID(),
+    remote_id: b?.id || undefined,
+    name: b?.name || 'Untitled Badge',
+    description: b?.description || '',
+    icon: b?.icon || '🏅',
+    badge_type: type,
+    target_value: Number(b?.target_value || 1),
+    xp_value: Number(b?.xp_value || 10),
+    is_active: isActiveBadge(b),
+  };
+}
+function normaliseBadgeDefinition(b: BadgeDefinition): BadgeDefinition {
+  return {
+    ...b,
+    icon: b.icon || '🏅',
+    badge_type: isSupportedAchievementType(b.badge_type) ? b.badge_type : 'sessions_completed',
+    target_value: Math.max(1, Number(b.target_value || 1)),
+    xp_value: Math.max(0, Number(b.xp_value || 0)),
+    is_active: b.is_active !== false,
+  };
+}
+function mergeBadgeDefinitions(local: BadgeDefinition[], remote: BadgeDefinition[]) {
+  const map = new Map<string, BadgeDefinition>();
+  [...local, ...remote].forEach(b => {
+    const key = b.remote_id || b.id || normalise(b.name);
+    map.set(key, normaliseBadgeDefinition(b));
+  });
+  return Array.from(map.values());
+}
+function isUuid(value?: string) { return !!value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value); }
+async function saveRemoteBadgeDefinition(def: BadgeDefinition): Promise<BadgeDefinition> {
+  const normalised = normaliseBadgeDefinition(def);
+  if (!supabase) return normalised;
+  try {
+    const badgeId = isUuid(normalised.remote_id || normalised.id) ? (normalised.remote_id || normalised.id) : crypto.randomUUID();
+    const row = {
+      id: badgeId,
+      name: normalised.name,
+      description: normalised.description,
+      icon: normalised.icon,
+      badge_type: normalised.badge_type,
+      target_value: normalised.target_value,
+      xp_value: normalised.xp_value || 0,
+      is_active: normalised.is_active !== false,
+    };
+    const { data, error } = await supabase.from('badges').upsert(row, { onConflict: 'id' }).select('*').single();
+    if (error) throw error;
+    return mapRemoteBadgeToLocal(data || row);
+  } catch (err) {
+    console.warn('Supabase badge save skipped:', err);
+    return normalised;
+  }
+}
+async function deleteRemoteBadgeDefinition(def: BadgeDefinition): Promise<boolean> {
+  if (!supabase) return true;
+  const remoteId = def.remote_id || def.id;
+  if (!isUuid(remoteId)) return true;
+  try {
+    const { error } = await supabase.from('badges').delete().eq('id', remoteId);
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.warn('Supabase badge delete skipped:', err);
+    return false;
+  }
+}
+
 async function ensureRemoteAthlete(profile: AthleteProfile): Promise<string | null> {
   if (!supabase) return null;
   try {
@@ -490,6 +580,7 @@ function migrateFinalState(){
     if (!localStorage.getItem('bbb_events')) localStorage.setItem('bbb_events', JSON.stringify([]));
     if (!localStorage.getItem('bbb_plans')) localStorage.setItem('bbb_plans', JSON.stringify([]));
     if (!localStorage.getItem('bbb_logs')) localStorage.setItem('bbb_logs', JSON.stringify([]));
+    if (!localStorage.getItem('bbb_badges')) localStorage.setItem('bbb_badges', JSON.stringify(initialBadges));
 
     const users = canonicaliseUsers(JSON.parse(localStorage.getItem('bbb_users') || '[]'));
     const athletes = canonicaliseAthletes(JSON.parse(localStorage.getItem('bbb_athletes') || '[]'));
@@ -530,6 +621,7 @@ function App() {
   const [events, setEvents] = useState<CalendarEvent[]>(() => storage('bbb_events', []));
   const [logs, setLogs] = useState<WorkoutLog[]>(() => storage('bbb_logs', []));
   const [plans, setPlans] = useState<WorkoutPlan[]>(() => storage('bbb_plans', []));
+  const [badgeDefinitions, setBadgeDefinitions] = useState<BadgeDefinition[]>(() => storage('bbb_badges', initialBadges));
   const [video, setVideo] = useState<{url: string; title: string} | null>(null);
   const [activeSession, setActiveSession] = useState<CalendarEvent | null>(null);
 
@@ -541,6 +633,7 @@ function App() {
   useEffect(() => { setStorage('bbb_events', events); }, [events]);
   useEffect(() => { setStorage('bbb_logs', logs); }, [logs]);
   useEffect(() => { setStorage('bbb_plans', plans); }, [plans]);
+  useEffect(() => { setStorage('bbb_badges', badgeDefinitions); }, [badgeDefinitions]);
 
   useEffect(() => {
     if (currentUser && currentUser.athlete_id) {
@@ -561,6 +654,18 @@ function App() {
     if (!supabase) return;
     const { data } = await supabase.from('exercises').select('*').eq('is_archived', false).order('name');
     if (data?.length) setExercises(data as Exercise[]);
+
+    try {
+      const { data: remoteBadges, error: remoteBadgeError } = await supabase.from('badges').select('*').order('created_at', { ascending:true });
+      if (!remoteBadgeError && remoteBadges?.length) {
+        const mappedBadges = remoteBadges.map(mapRemoteBadgeToLocal).filter(b => b.is_active !== false);
+        setBadgeDefinitions(prev => mergeBadgeDefinitions(prev, mappedBadges));
+      } else if (remoteBadgeError) {
+        console.warn('Supabase badge load skipped:', remoteBadgeError);
+      }
+    } catch (err) {
+      console.warn('Supabase badge load skipped:', err);
+    }
 
     try {
       // Ensure the two core profiles exist remotely. This makes trainer-to-athlete assignment reliable across logins/devices.
@@ -636,7 +741,7 @@ function App() {
     if (!currentUser) return [];
     return events.filter(e => isEventVisibleForUser(e, currentUser));
   }, [events, currentUser?.id, currentUser?.athlete_id, currentUser?.email]);
-  const liveBadges = useMemo(() => buildBadges(logs, visibleEvents), [logs, visibleEvents]);
+  const liveBadges = useMemo(() => buildBadges(logs, visibleEvents, badgeDefinitions), [logs, visibleEvents, badgeDefinitions]);
 
   function handleLogout(){ setCurrentUser(null); setDrawerOpen(false); }
   function go(p: Page){ setPage(p); setDrawerOpen(false); window.scrollTo({top:0, behavior:'smooth'}); }
@@ -650,13 +755,13 @@ function App() {
   return <div className="appShell">
     <header className="topbar">
       <button className="iconButton" onClick={()=>setDrawerOpen(true)} aria-label="Open menu"><Menu size={24}/></button>
-      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.11</span></div></div>
+      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.14</span></div></div>
       <div className="topContext"><span>{currentUser.name}</span><em>{titleCase(currentUser.role)}</em></div>
     </header>
 
     {drawerOpen && <div className="drawerBackdrop" onClick={()=>setDrawerOpen(false)} />}
     <aside className={`drawer ${drawerOpen ? 'open' : ''}`}>
-      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.11</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
+      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.14</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
       <div className="drawerUser"><b>{currentUser.name}</b><span>{currentUser.email}</span><em>{titleCase(currentUser.role)} profile</em></div>
       <nav>{visibleNav.map(n => <button key={n.page} onClick={() => go(n.page)} className={page===n.page?'active':''}>{n.icon}<span>{n.label}</span></button>)}</nav>
       <button className="logoutButton" onClick={handleLogout}><LogOut size={18}/> Sign out</button>
@@ -675,7 +780,7 @@ function App() {
       {page==='stats' && <Stats logs={logs} events={visibleEvents} profile={profile}/>} 
       {page==='badges' && <Badges badges={liveBadges}/>} 
       {page==='profile' && <Profile profile={profile} setProfile={(p)=>{setProfile(p); setAthletes(athletes.map(a=>a.id===p.id?p:a));}}/>} 
-      {page==='admin' && <Admin profile={profile} events={events} setEvents={setEvents} plans={plans} setPlans={setPlans} logs={logs} setLogs={setLogs} exercises={exercises} setExercises={setExercises} users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/>} 
+      {page==='admin' && <Admin profile={profile} events={events} setEvents={setEvents} plans={plans} setPlans={setPlans} logs={logs} setLogs={setLogs} exercises={exercises} setExercises={setExercises} users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes} badgeDefinitions={badgeDefinitions} setBadgeDefinitions={setBadgeDefinitions}/>} 
     </main>
     {video && <VideoModal title={video.title} url={video.url} onClose={()=>setVideo(null)} />}
   </div>;
@@ -940,35 +1045,43 @@ function Stats({logs,events,profile}:{logs:WorkoutLog[];events:CalendarEvent[];p
 }
 function calcStreak(logs:WorkoutLog[], events:CalendarEvent[]){ const doneDates=new Set([...logs.filter(l=>l.completed).map(l=>l.date), ...events.filter(e=>e.status==='completed').map(e=>e.date)]); let streak=0; for(let i=0;i<365;i++){ const d=iso(addDays(new Date(), -i)); if(doneDates.has(d)) streak++; else if(i>0) break; } return streak; }
 function percent(count:number,target:number){ return Math.min(100, Math.round((count / Math.max(target,1)) * 100)); }
-function buildBadges(logs:WorkoutLog[], events:CalendarEvent[]): Badge[] {
+function achievementCount(type: AchievementType, logs: WorkoutLog[], events: CalendarEvent[]) {
   const completedSessions = events.filter(e=>e.status==='completed');
   const completedLogs = logs.filter(l=>l.completed);
   const streak = calcStreak(logs, events);
-  const footwork = [...completedSessions.map(e=>e.title), ...completedLogs.map(l=>l.exercise_name)].filter(v=>/footwork/i.test(v)).length;
-  const fma = completedSessions.filter(e=>e.type==='FMA' || !!e.class_name).length;
-  const strength = completedLogs.filter(l=>['Gym','Strength'].includes(l.session_type || '')).length;
-  const planned = completedSessions.filter(e=>!!e.workout_plan_id).length;
-  const counts: Record<string,{count:number;target:number}> = {
-    b1: { count: completedSessions.length + completedLogs.length, target: 1 },
-    b2: { count: streak, target: 7 },
-    b3: { count: footwork, target: 30 },
-    b4: { count: fma, target: 25 },
-    b5: { count: strength, target: 50 },
-    b6: { count: planned, target: 20 },
-  };
-  return initialBadges.map(b => {
-    const data = counts[b.id] || { count:0, target:1 };
-    const progress = percent(data.count, data.target);
-    return { ...b, progress, unlocked: data.count >= data.target };
-  });
+  switch(type) {
+    case 'sessions_completed': return completedSessions.length;
+    case 'completed_workouts': return completedSessions.filter(e=>!!e.workout_plan_id || !!e.remote_plan_id || (!!e.title && !e.class_name)).length;
+    case 'exercises_completed': return completedLogs.length;
+    case 'workout_streak': return streak;
+    case 'fma_sessions': return completedSessions.filter(e=>e.type==='FMA' || !!e.class_name).length;
+    case 'gym_sessions': return completedSessions.filter(e=>e.type==='Gym').length;
+    case 'home_sessions': return completedSessions.filter(e=>e.type==='Home').length;
+    case 'bjj_sessions': return completedSessions.filter(e=>e.type==='BJJ' || /bjj|grappling/i.test(e.title || '')).length;
+    case 'kickboxing_sessions': return completedSessions.filter(e=>e.type==='Kickboxing' || /kickboxing|boxing|striking/i.test(e.title || '')).length;
+    case 'mobility_sessions': return completedSessions.filter(e=>['Mobility','Recovery','Physio'].includes(e.type)).length;
+    case 'strength_exercises': return completedLogs.filter(l=>['Gym','Strength'].includes(l.session_type || '') || /squat|deadlift|press|row|curl|raise|strength|barbell|dumbbell/i.test(l.exercise_name || '')).length;
+    case 'footwork_sessions': return [...completedSessions.map(e=>e.title), ...completedLogs.map(l=>l.exercise_name)].filter(v=>/footwork/i.test(v || '')).length;
+    default: return 0;
+  }
+}
+function buildBadges(logs:WorkoutLog[], events:CalendarEvent[], definitions:BadgeDefinition[]): Badge[] {
+  return definitions
+    .map(normaliseBadgeDefinition)
+    .filter(b => b.is_active !== false)
+    .map(b => {
+      const count = achievementCount(b.badge_type, logs, events);
+      const progress = percent(count, b.target_value);
+      return { ...b, current_count: count, progress, unlocked: count >= b.target_value };
+    });
 }
 
-function Badges({badges}:{badges:Badge[]}){ return <section className="panel"><h3>Achievements</h3><p className="muted">All counters start from zero and update from completed sessions, class attendance and exercise logs.</p><div className="badgeGrid">{badges.map(b=><div className={`badgeCard ${b.unlocked?'unlocked':''}`} key={b.id}><span>{b.icon}</span><h3>{b.name}</h3><p>{b.description}</p><div className="progress"><i style={{width:`${b.progress}%`}}/></div><em>{b.progress}% complete</em></div>)}</div></section> }
+function Badges({badges}:{badges:Badge[]}){ return <section className="panel"><h3>Achievements</h3><p className="muted">Counters update from completed sessions, FMA attendance and exercise logs. New achievements can now be managed from the Admin Console.</p><div className="badgeGrid">{badges.map(b=><div className={`badgeCard ${b.unlocked?'unlocked':''}`} key={b.id}><span>{b.icon}</span><h3>{b.name}</h3><p>{b.description}</p><div className="progress"><i style={{width:`${b.progress}%`}}/></div><em>{b.current_count} / {b.target_value} · {b.progress}% complete{b.xp_value ? ` · ${b.xp_value} XP` : ''}</em></div>)}</div></section> }
 function Profile({profile,setProfile}:{profile:AthleteProfile;setProfile:(p:AthleteProfile)=>void}){ function upd(k:keyof AthleteProfile,v:any){ setProfile({...profile,[k]:v}); } return <section className="panel profilePage"><h3>Athlete Profile</h3><p className="muted">These details help personalise targets, BMI, competition planning and progress tracking.</p><div className="grid three"><Field label="Athlete Name" help="Shown throughout the app." value={profile.name} onChange={v=>upd('name',v)}/><Field label="Age" help="Current age in years." value={profile.age||''} type="number" onChange={v=>upd('age',Number(v))}/><Field label="Gym / Academy" help="Primary training location." value={profile.gym||''} onChange={v=>upd('gym',v)}/><Field label="Height (cm)" help="Used to calculate BMI." value={profile.height_cm||''} type="number" onChange={v=>upd('height_cm',Number(v))}/><Field label="Weight (kg)" help="Current body weight." value={profile.weight_kg||''} type="number" onChange={v=>upd('weight_kg',Number(v))}/><Field label="Competition Weight (kg)" help="Target fight or competition weight." value={profile.competition_weight_kg||''} type="number" onChange={v=>upd('competition_weight_kg',Number(v))}/><Field label="Belt Rank" help="Current martial arts rank." value={profile.belt_rank||''} onChange={v=>upd('belt_rank',v)}/><Field label="Profile Photo URL" help="Optional image link for later use." value={profile.profile_photo_url||''} onChange={v=>upd('profile_photo_url',v)}/><div className="profileStat"><span>BMI</span><b>{bmi(profile)||'—'}</b><em>Calculated from height and weight.</em></div></div><label className="fullLabel">Athlete Goal<span>Main training objective.</span><textarea value={profile.goal||''} onChange={e=>upd('goal',e.target.value)}/></label></section> }
 function Field({label,help,value,onChange,type='text'}:{label:string;help:string;value:any;type?:string;onChange:(v:string)=>void}){ return <label className="fieldLabel">{label}<span>{help}</span><input type={type} value={value} onChange={e=>onChange(e.target.value)}/></label> }
 
-function Admin({profile,events,setEvents,plans,setPlans,logs,setLogs,exercises,setExercises,users,setUsers,athletes,setAthletes}:{profile:AthleteProfile;events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;plans:WorkoutPlan[];setPlans:(p:WorkoutPlan[])=>void;logs:WorkoutLog[];setLogs:(l:WorkoutLog[])=>void;exercises:Exercise[];setExercises:(e:Exercise[])=>void;users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){
-  return <div className="adminGrid"><section className="panel"><h3>Admin Console</h3><div className="grid three"><Kpi label="Athletes" value={athletes.length}/><Kpi label="Sessions Planned" value={events.length}/><Kpi label="Saved Programmes" value={plans.length}/></div></section><AdminResetControls events={events} setEvents={setEvents} plans={plans} setPlans={setPlans} logs={logs} setLogs={setLogs}/><WorkoutAssignment plans={plans} athletes={athletes} users={users} events={events} setEvents={setEvents}/><AdminTrainingDiary events={events} setEvents={setEvents} athletes={athletes} users={users}/><AdminWorkoutManager plans={plans} setPlans={setPlans}/><AthleteCreator users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/><ManualExercise setExercises={setExercises} exercises={exercises}/></div>
+function Admin({profile,events,setEvents,plans,setPlans,logs,setLogs,exercises,setExercises,users,setUsers,athletes,setAthletes,badgeDefinitions,setBadgeDefinitions}:{profile:AthleteProfile;events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;plans:WorkoutPlan[];setPlans:(p:WorkoutPlan[])=>void;logs:WorkoutLog[];setLogs:(l:WorkoutLog[])=>void;exercises:Exercise[];setExercises:(e:Exercise[])=>void;users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void;badgeDefinitions:BadgeDefinition[];setBadgeDefinitions:(b:BadgeDefinition[])=>void}){
+  return <div className="adminGrid"><section className="panel"><h3>Admin Console</h3><div className="grid three"><Kpi label="Athletes" value={athletes.length}/><Kpi label="Sessions Planned" value={events.length}/><Kpi label="Saved Programmes" value={plans.length}/></div></section><AdminResetControls events={events} setEvents={setEvents} plans={plans} setPlans={setPlans} logs={logs} setLogs={setLogs}/><WorkoutAssignment plans={plans} athletes={athletes} users={users} events={events} setEvents={setEvents}/><AdminTrainingDiary events={events} setEvents={setEvents} athletes={athletes} users={users}/><AdminWorkoutManager plans={plans} setPlans={setPlans}/><AchievementManager badges={badgeDefinitions} setBadges={setBadgeDefinitions}/><AthleteCreator users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/><ManualExercise setExercises={setExercises} exercises={exercises}/></div>
 }
 
 function AdminResetControls({events,setEvents,plans,setPlans,logs,setLogs}:{events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;plans:WorkoutPlan[];setPlans:(p:WorkoutPlan[])=>void;logs:WorkoutLog[];setLogs:(l:WorkoutLog[])=>void}){
@@ -994,6 +1107,48 @@ function AdminTrainingDiary({events,setEvents,athletes,users}:{events:CalendarEv
 function AdminWorkoutManager({plans,setPlans}:{plans:WorkoutPlan[];setPlans:(p:WorkoutPlan[])=>void}){
   async function removePlan(plan: WorkoutPlan){ await deleteRemoteProgramme(plan); const next=plans.filter(p=>p.id!==plan.id && (p as any).remote_id!==(plan as any).remote_id); setPlans(next); setStorage('bbb_plans', next); }
   return <section className="panel"><h3>Saved Workout Management</h3><p className="muted">View and delete workouts already built in the Workout Builder.</p>{plans.length===0 ? <p className="status">No saved workouts.</p> : plans.map(p=><div className="preview" key={p.id}><b>{p.name}</b><span>{p.focus || 'No focus added'}</span><em>{p.exercises.length} exercises · {p.session_type || 'Gym'}</em><button className="miniBtn dangerBtn" onClick={()=>removePlan(p)}>Delete saved workout</button></div>)}</section>
+}
+
+function AchievementManager({badges,setBadges}:{badges:BadgeDefinition[];setBadges:(b:BadgeDefinition[])=>void}){
+  const defaultForm: BadgeDefinition = { id:'', name:'', description:'', icon:'🏅', badge_type:'sessions_completed', target_value:1, xp_value:10, is_active:true };
+  const [form,setForm]=useState<BadgeDefinition>(defaultForm);
+  const [status,setStatus]=useState('');
+  const activeBadges = badges.filter(b=>b.is_active !== false);
+  const inactiveBadges = badges.filter(b=>b.is_active === false);
+  const editing = !!form.id;
+  function update<K extends keyof BadgeDefinition>(key:K,value:BadgeDefinition[K]){ setForm({...form,[key]:value}); }
+  function editBadge(b: BadgeDefinition){ setForm(normaliseBadgeDefinition(b)); window.scrollTo({top:0, behavior:'smooth'}); }
+  function resetForm(){ setForm(defaultForm); }
+  async function saveBadge(){
+    if(!form.name.trim()){ setStatus('Add an achievement name before saving.'); return; }
+    const candidate = normaliseBadgeDefinition({ ...form, id: form.id || crypto.randomUUID(), name: form.name.trim(), description: form.description.trim() || 'Achievement target.', icon: form.icon || '🏅' });
+    setStatus('Saving achievement...');
+    const saved = await saveRemoteBadgeDefinition(candidate);
+    const next = [saved, ...badges.filter(b => b.id !== form.id && b.remote_id !== form.remote_id && normalise(b.name) !== normalise(saved.name))];
+    setBadges(next);
+    setStorage('bbb_badges', next);
+    setStatus(`${saved.name} has been saved. It will update automatically from the selected counter.`);
+    resetForm();
+  }
+  async function toggleBadge(b: BadgeDefinition){
+    const updated = { ...b, is_active: b.is_active === false };
+    const saved = await saveRemoteBadgeDefinition(updated);
+    const next = badges.map(x => x.id===b.id || x.remote_id===b.remote_id ? saved : x);
+    setBadges(next); setStorage('bbb_badges', next);
+    setStatus(`${saved.name} is now ${saved.is_active === false ? 'inactive' : 'active'}.`);
+  }
+  async function deleteBadge(b: BadgeDefinition){
+    const ok = await deleteRemoteBadgeDefinition(b);
+    const next = badges.filter(x => x.id!==b.id && x.remote_id!==b.remote_id);
+    setBadges(next); setStorage('bbb_badges', next);
+    setStatus(ok ? `${b.name} has been deleted.` : `${b.name} was removed locally. If it reappears, run the badge delete policy SQL in Supabase.`);
+    if(form.id===b.id) resetForm();
+  }
+  return <section className="panel achievementManager"><h3>Achievement Manager</h3><p className="muted">Create and update badges without redeploying the app. Use the fixed achievement types below so the counters can update automatically from training data.</p><div className="achievementEditor"><div className="grid three"><label>Badge Name<input value={form.name} onChange={e=>update('name',e.target.value)} placeholder="e.g. 10 FMA Classes"/></label><label>Icon<input value={form.icon} onChange={e=>update('icon',e.target.value)} placeholder="🏆"/></label><label>Achievement Type<select value={form.badge_type} onChange={e=>update('badge_type',e.target.value as AchievementType)}>{ACHIEVEMENT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></label><label>Target Number<input type="number" min="1" value={form.target_value} onChange={e=>update('target_value',Number(e.target.value))}/></label><label>XP Value<input type="number" min="0" value={form.xp_value || 0} onChange={e=>update('xp_value',Number(e.target.value))}/></label><label>Status<select value={form.is_active === false ? 'inactive' : 'active'} onChange={e=>update('is_active', e.target.value==='active')}><option value="active">Active</option><option value="inactive">Inactive</option></select></label></div><label className="fullLabel">Description<span>Shown on the athlete badges page.</span><textarea value={form.description} onChange={e=>update('description',e.target.value)} placeholder="Describe what the athlete needs to do."/></label><div className="typeHelp"><b>{ACHIEVEMENT_TYPES.find(t=>t.value===form.badge_type)?.label}</b><span>{ACHIEVEMENT_TYPES.find(t=>t.value===form.badge_type)?.help}</span></div><div className="formActions"><button className="primary" onClick={saveBadge}><Save size={16}/>{editing?'Update achievement':'Create achievement'}</button>{editing && <button onClick={resetForm}>Cancel edit</button>}</div>{status && <div className="status">{status}</div>}</div><h4>Active Achievements</h4>{activeBadges.length===0 ? <p className="status">No active achievements yet.</p> : <div className="achievementList">{activeBadges.map(b=><AchievementAdminCard key={b.id} badge={b} onEdit={()=>editBadge(b)} onToggle={()=>toggleBadge(b)} onDelete={()=>deleteBadge(b)}/>)}</div>}{inactiveBadges.length>0 && <><h4>Inactive Achievements</h4><div className="achievementList inactive">{inactiveBadges.map(b=><AchievementAdminCard key={b.id} badge={b} onEdit={()=>editBadge(b)} onToggle={()=>toggleBadge(b)} onDelete={()=>deleteBadge(b)}/>)}</div></>}</section>
+}
+function AchievementAdminCard({badge,onEdit,onToggle,onDelete}:{badge:BadgeDefinition;onEdit:()=>void;onToggle:()=>void;onDelete:()=>void}){
+  const type = ACHIEVEMENT_TYPES.find(t=>t.value===badge.badge_type);
+  return <div className="preview achievementAdminCard"><div><b><span className="badgeIconSmall">{badge.icon}</span>{badge.name}</b><span>{badge.description}</span><em>{type?.label || badge.badge_type} · Target {badge.target_value} · {badge.xp_value || 0} XP · {badge.is_active === false ? 'Inactive' : 'Active'}</em></div><div className="actions"><button className="miniBtn" onClick={onEdit}>Edit</button><button className="miniBtn" onClick={onToggle}>{badge.is_active === false ? 'Activate' : 'Deactivate'}</button><button className="miniBtn dangerBtn" onClick={onDelete}>Delete</button></div></div>
 }
 
 function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:WorkoutPlan[]; athletes:AthleteProfile[]; users:AppUser[]; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void}){
