@@ -1,3 +1,7 @@
+# BlackBeltBootcamp V2.2.12 Local Calendar Date Fix
+
+This package builds on V2.2.11 and fixes the calendar date offset issue where sessions assigned on iPhone/UK time could appear one day later in the athlete diary. Calendar day matching now uses local YYYY-MM-DD dates rather than UTC conversion.
+
 # Production Readiness Audit — V2.2.11
 
 ## Build status

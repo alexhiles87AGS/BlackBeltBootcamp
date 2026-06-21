@@ -30,7 +30,7 @@ const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[] 
   { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'] },
 ];
 
-const APP_VERSION = '2.2.11-completion-flow-fix';
+const APP_VERSION = '2.2.12-local-calendar-date-fix';
 
 const cleanProfiles: AthleteProfile[] = [
   {
@@ -87,11 +87,17 @@ const fmaClasses = [
 
 function storage<T>(key:string, fallback:T):T { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; } }
 function setStorage<T>(key:string, value:T){ localStorage.setItem(key, JSON.stringify(value)); }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+function localDateString(date: Date){
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+function todayISO(){ return localDateString(new Date()); }
 function addDays(date: Date, days: number){ const d = new Date(date); d.setDate(d.getDate()+days); return d; }
 function startOfWeek(date = new Date()){ const d = new Date(date); const day = d.getDay() || 7; d.setDate(d.getDate() - day + 1); d.setHours(0,0,0,0); return d; }
 function weekDates(){ const start = startOfWeek(); return Array.from({length:7}, (_,i)=>addDays(start,i)); }
-function iso(date: Date){ return date.toISOString().slice(0,10); }
+function iso(date: Date){ return localDateString(date); }
 function dayLabel(date: Date){ return date.toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short' }); }
 function titleCase(v?: string | null){ return (v || '').split(/\s+/).filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' '); }
 function sentence(v?: string | null){ const s = (v || '').trim(); return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
