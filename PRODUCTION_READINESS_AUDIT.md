@@ -41,3 +41,10 @@ Private beta ready for James. Not yet hardened for broad public release.
 - Applied mobile/iPhone visual polish via CSS only where possible.
 - Updated FMA behaviour so class sessions do not generate individual exercise logs.
 - Preserved the existing V2.2 app-like structure and avoided broad rewrites.
+
+
+## V2.2.3 Check
+
+Added the final trainer-to-athlete assignment workflow on top of the V2.2.2 final polish build. This is implemented without changing the working exercise importer, exercise library, FMA class-session behaviour, Today's Training page, or existing UI structure.
+
+Production build verified with `npm run build`.

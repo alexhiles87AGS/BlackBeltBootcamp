@@ -66,3 +66,45 @@ This package uses the attached V2.2 app-like build as the base and applies only 
 - Exercise workout completion, library, builder, importer, admin and profile features remain on the same V2.2 structure.
 
 No Supabase schema rerun is required for this UI/FMA behaviour update unless your live site reports a specific missing table/column error.
+
+
+## V2.2.2 Final Polish
+
+This package is based on the V2.2 app-like build and adds the final requested polish:
+
+- Login screen no longer shows demo/admin buttons.
+- Login fields are blank by default; James’s details are no longer pre-populated.
+- Clean local fallback profiles are included for Alex Hiles (Admin) and James Hiles (Athlete).
+- Dashboard removes BMI, fixes the weekly completion ring text and uses two-wide KPI tiles.
+- Training Calendar shows current week and next week.
+- Add Session and FMA class date/time forms have been cleaned up for iPhone/mobile layouts.
+- Today’s Training and Exercise Library were left unchanged.
+- Progress Stats KPI tiles now display two-wide and stack instead of scrolling sideways.
+- Initial calendar, programme and log data is reset so Alex can build James’s schedule from scratch.
+
+### Local fallback login profiles
+
+Alex Hiles Admin:
+- Email: alex.hiles.ags@gmail.com
+- Password: BlackBeltAdmin!2026
+
+James Hiles Athlete:
+- Email: james.hiles@blackbeltbootcamp.app
+- Password: JamesTraining!2026
+
+For a fully locked-down production deployment, replace these local fallback accounts with Supabase Auth users and role metadata.
+
+
+## V2.2.3 Trainer Assignment Update
+
+This build keeps the V2.2 app-like structure and final polish, then adds the requested trainer workflow:
+
+- Admin/coach can create a workout in the Workout Builder.
+- Admin Console includes **Assign Workout To Athlete**.
+- Trainer selects a saved workout, athlete profile, session date and session time.
+- The workout is pushed to the selected athlete calendar.
+- Athlete opens the assigned session and follows the exact exercises from the saved workout.
+- FMA classes remain class sessions only and do not require sets, reps or weights.
+- Upgrade migration no longer wipes existing local workouts, schedules or logs.
+
+No Supabase SQL rerun is required for this UI/workflow update.

@@ -30,24 +30,38 @@ const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[] 
   { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'] },
 ];
 
-const demoUsers: AppUser[] = [
-  { id: 'admin-alex', email: 'alex@blackbeltbootcamp.app', password: 'admin123', name: 'Alex Hiles', role: 'admin', athlete_id: 'james-demo' },
-  { id: 'athlete-james', email: 'james@blackbeltbootcamp.app', password: 'james123', name: 'James Hiles', role: 'athlete', athlete_id: 'james-demo' },
+const APP_VERSION = '2.2.3-trainer-assignment';
+
+const cleanProfiles: AthleteProfile[] = [
+  {
+    id: 'alex-admin',
+    name: 'Alex Hiles',
+    email: 'alex.hiles.ags@gmail.com',
+    role: 'admin',
+    gym: 'BlackBeltBootcamp',
+    goal: 'Manage James’s training platform, programmes and progress.',
+  },
+  {
+    id: 'james-athlete',
+    name: 'James Hiles',
+    email: 'james.hiles@blackbeltbootcamp.app',
+    role: 'athlete',
+    age: 14,
+    height_cm: 170,
+    weight_kg: 65,
+    belt_rank: 'Black Belt',
+    gym: 'FMA Chester',
+    goal: 'Build complete MMA athleticism and long-term professional fighter habits.',
+    competition_weight_kg: 66,
+  },
 ];
 
-const defaultProfile: AthleteProfile = {
-  id: 'james-demo',
-  name: 'James Hiles',
-  email: 'james@blackbeltbootcamp.app',
-  role: 'athlete',
-  age: 14,
-  height_cm: 170,
-  weight_kg: 65,
-  belt_rank: 'Black Belt',
-  gym: 'FMA Chester',
-  goal: 'Build complete MMA athleticism and long-term professional fighter habits.',
-  competition_weight_kg: 66,
-};
+const cleanUsers: AppUser[] = [
+  { id: 'admin-alex', email: 'alex.hiles.ags@gmail.com', password: 'BlackBeltAdmin!2026', name: 'Alex Hiles', role: 'admin', athlete_id: 'alex-admin' },
+  { id: 'athlete-james', email: 'james.hiles@blackbeltbootcamp.app', password: 'JamesTraining!2026', name: 'James Hiles', role: 'athlete', athlete_id: 'james-athlete' },
+];
+
+const defaultProfile: AthleteProfile = cleanProfiles[1];
 
 const starter: Exercise[] = [
   { exercise_id: 'starter-1', name: 'bench press', description: 'A compound upper body pressing exercise.', equipment:'barbell, bench', category:'strength', difficulty:'intermediate', body_part:'chest', target:'pectorals', location:'Gym', secondary_muscles:['anterior delts','triceps'], instructions:['Set your eyes under the bar and plant your feet.','Squeeze shoulder blades together and brace.','Lower the bar with control and press smoothly.'] },
@@ -99,15 +113,31 @@ function getInitialEvents(): CalendarEvent[] {
   ];
 }
 
+function migrateFinalState(){
+  try {
+    // From V2.2.3 onwards, upgrades must not wipe schedules, programmes, logs or login state.
+    // Seed the clean Alex/James profiles only when the local store does not already exist.
+    if (!localStorage.getItem('bbb_users')) localStorage.setItem('bbb_users', JSON.stringify(cleanUsers));
+    if (!localStorage.getItem('bbb_athletes')) localStorage.setItem('bbb_athletes', JSON.stringify(cleanProfiles));
+    if (!localStorage.getItem('bbb_profile')) localStorage.setItem('bbb_profile', JSON.stringify(defaultProfile));
+    if (!localStorage.getItem('bbb_events')) localStorage.setItem('bbb_events', JSON.stringify([]));
+    if (!localStorage.getItem('bbb_plans')) localStorage.setItem('bbb_plans', JSON.stringify([]));
+    if (!localStorage.getItem('bbb_logs')) localStorage.setItem('bbb_logs', JSON.stringify([]));
+    localStorage.setItem('bbb_app_version', APP_VERSION);
+  } catch { /* local storage unavailable */ }
+}
+
+migrateFinalState();
+
 function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => storage('bbb_current_user', null));
   const [page, setPage] = useState<Page>('dashboard');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profile, setProfile] = useState<AthleteProfile>(() => storage('bbb_profile', defaultProfile));
-  const [athletes, setAthletes] = useState<AthleteProfile[]>(() => storage('bbb_athletes', [defaultProfile]));
-  const [users, setUsers] = useState<AppUser[]>(() => storage('bbb_users', demoUsers));
+  const [athletes, setAthletes] = useState<AthleteProfile[]>(() => storage('bbb_athletes', cleanProfiles));
+  const [users, setUsers] = useState<AppUser[]>(() => storage('bbb_users', cleanUsers));
   const [exercises, setExercises] = useState<Exercise[]>(() => storage('bbb_exercises', starter));
-  const [events, setEvents] = useState<CalendarEvent[]>(() => storage('bbb_events', getInitialEvents()));
+  const [events, setEvents] = useState<CalendarEvent[]>(() => storage('bbb_events', []));
   const [logs, setLogs] = useState<WorkoutLog[]>(() => storage('bbb_logs', []));
   const [plans, setPlans] = useState<WorkoutPlan[]>(() => storage('bbb_plans', []));
   const [video, setVideo] = useState<{url: string; title: string} | null>(null);
@@ -137,6 +167,11 @@ function App() {
     if (data?.length) setExercises(data as Exercise[]);
   }
 
+  const visibleEvents = useMemo(() => {
+    if (!currentUser || currentUser.role !== 'athlete') return events;
+    return events.filter(e => !e.athlete_id || e.athlete_id === profile.id);
+  }, [events, currentUser?.id, profile.id]);
+
   function handleLogout(){ setCurrentUser(null); setDrawerOpen(false); }
   function go(p: Page){ setPage(p); setDrawerOpen(false); window.scrollTo({top:0, behavior:'smooth'}); }
   function openSession(event: CalendarEvent){ setActiveSession(event); setPage('session'); setDrawerOpen(false); }
@@ -149,13 +184,13 @@ function App() {
   return <div className="appShell">
     <header className="topbar">
       <button className="iconButton" onClick={()=>setDrawerOpen(true)} aria-label="Open menu"><Menu size={24}/></button>
-      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.1</span></div></div>
+      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.3</span></div></div>
       <div className="topContext"><span>{currentUser.name}</span><em>{titleCase(currentUser.role)}</em></div>
     </header>
 
     {drawerOpen && <div className="drawerBackdrop" onClick={()=>setDrawerOpen(false)} />}
     <aside className={`drawer ${drawerOpen ? 'open' : ''}`}>
-      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.1</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
+      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.3</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
       <div className="drawerUser"><b>{currentUser.name}</b><span>{currentUser.email}</span><em>{titleCase(currentUser.role)} profile</em></div>
       <nav>{visibleNav.map(n => <button key={n.page} onClick={() => go(n.page)} className={page===n.page?'active':''}>{n.icon}<span>{n.label}</span></button>)}</nav>
       <button className="logoutButton" onClick={handleLogout}><LogOut size={18}/> Sign out</button>
@@ -163,33 +198,33 @@ function App() {
 
     <main className="pageFrame">
       <section className="pageHeader"><span className="muted">{profile.name} · {profile.gym}</span><h2>{activeTitle}</h2></section>
-      {page==='dashboard' && <Dashboard logs={logs} events={events} badges={initialBadges} profile={profile} setPage={go} openSession={openSession}/>} 
+      {page==='dashboard' && <Dashboard logs={logs} events={visibleEvents} badges={initialBadges} profile={profile} setPage={go} openSession={openSession}/>} 
       {page==='library' && <ExerciseLibrary exercises={exercises} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} />}
       {page==='import' && <Importer setExercises={setExercises} reloadSupabase={loadFromSupabase} exercises={exercises} />}
       {page==='builder' && <WorkoutBuilder exercises={exercises} plans={plans} setPlans={setPlans} />}
-      {page==='today' && <Today events={events} exercises={exercises} logs={logs} setLogs={setLogs} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} openSession={openSession}/>} 
-      {page==='calendar' && <TrainingCalendar events={events} setEvents={setEvents} openSession={openSession}/>} 
-      {page==='session' && <SessionWorkout session={activeSession} setSession={setActiveSession} exercises={exercises} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})}/>} 
+      {page==='today' && <Today events={visibleEvents} exercises={exercises} logs={logs} setLogs={setLogs} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} openSession={openSession}/>} 
+      {page==='calendar' && <TrainingCalendar events={visibleEvents} setEvents={setEvents} openSession={openSession}/>} 
+      {page==='session' && <SessionWorkout session={activeSession} setSession={setActiveSession} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})}/>} 
       {page==='fma' && <FmaClasses events={events} setEvents={setEvents} openSession={openSession}/>} 
-      {page==='stats' && <Stats logs={logs} events={events} profile={profile}/>} 
+      {page==='stats' && <Stats logs={logs} events={visibleEvents} profile={profile}/>} 
       {page==='badges' && <Badges badges={initialBadges}/>} 
       {page==='profile' && <Profile profile={profile} setProfile={(p)=>{setProfile(p); setAthletes(athletes.map(a=>a.id===p.id?p:a));}}/>} 
-      {page==='admin' && <Admin profile={profile} events={events} plans={plans} exercises={exercises} setExercises={setExercises} users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/>} 
+      {page==='admin' && <Admin profile={profile} events={events} setEvents={setEvents} plans={plans} exercises={exercises} setExercises={setExercises} users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/>} 
     </main>
     {video && <VideoModal title={video.title} url={video.url} onClose={()=>setVideo(null)} />}
   </div>;
 }
 
 function LoginScreen({users,setCurrentUser}:{users:AppUser[]; setCurrentUser:(u:AppUser)=>void}){
-  const [email,setEmail]=useState('james@blackbeltbootcamp.app');
-  const [password,setPassword]=useState('james123');
+  const [email,setEmail]=useState('');
+  const [password,setPassword]=useState('');
   const [status,setStatus]=useState('');
   async function login(e: React.FormEvent){
     e.preventDefault(); setStatus('');
-    const demo = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
-    if (demo) { setCurrentUser(demo); return; }
+    const localProfile = users.find(u => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password);
+    if (localProfile) { setCurrentUser(localProfile); return; }
     if (supabase) {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (!error && data.user) {
         const role = (data.user.user_metadata?.role || 'athlete') as AppUser['role'];
         setCurrentUser({ id:data.user.id, email:data.user.email || email, name:data.user.user_metadata?.name || data.user.email || email, role, athlete_id:data.user.user_metadata?.athlete_id });
@@ -198,23 +233,18 @@ function LoginScreen({users,setCurrentUser}:{users:AppUser[]; setCurrentUser:(u:
       setStatus(error?.message || 'Unable to sign in.');
       return;
     }
-    setStatus('No matching demo profile. Use the demo buttons or configure Supabase Auth.');
+    setStatus('No matching profile found. Check the email and password, or create the user in the Admin Console.');
   }
-  function quick(user:AppUser){ setEmail(user.email); setPassword(user.password || ''); setCurrentUser(user); }
   return <main className="loginPage">
     <section className="loginCard">
-      <div className="loginBrand"><Shield size={42}/><div><h1>BlackBeltBootcamp</h1><p>Professional training hub for James Hiles</p></div></div>
+      <div className="loginBrand"><Shield size={42}/><div><h1>BlackBeltBootcamp</h1><p>Secure training hub for Alex and James Hiles</p></div></div>
       <form onSubmit={login} className="loginForm">
-        <label>Email<input value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email"/></label>
-        <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password"/></label>
+        <label>Email<input value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" placeholder="Enter your email"/></label>
+        <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password"/></label>
         {status && <div className="status error">{status}</div>}
-        <button className="primary big" type="submit">Sign in</button>
+        <button className="primary big" type="submit" disabled={!email || !password}>Sign in</button>
       </form>
-      <div className="demoGrid">
-        <button onClick={()=>quick(demoUsers[1])}>Open James Demo</button>
-        <button onClick={()=>quick(demoUsers[0])}>Open Admin Profile</button>
-      </div>
-      <p className="muted smallText">The app stays signed in on this device until you choose Sign out. Supabase Auth sign-in is supported for real users once accounts are created.</p>
+      <p className="muted smallText">The app stays signed in on this device until you choose Sign out.</p>
     </section>
   </main>
 }
@@ -237,7 +267,7 @@ function Dashboard({logs,events,badges,profile,setPage,openSession}:{logs:Workou
       </div>
       <div className="readinessRing"><b>{weekComplete}%</b><span>Weekly completion</span></div>
     </section>
-    <div className="kpiRow"><Kpi label="Sessions Completed" value={sessionsDone}/><Kpi label="Exercises Completed" value={exercisesDone}/><Kpi label="Training Streak" value={`${streak} days`}/><Kpi label="BMI" value={bmi(profile) || '—'}/></div>
+    <div className="kpiRow dashboardKpis"><Kpi label="Sessions Completed" value={sessionsDone}/><Kpi label="Exercises Completed" value={exercisesDone}/><Kpi label="Training Streak" value={`${streak} days`}/><Kpi label="Today’s Sessions" value={todaySessions.length}/></div>
     <section className="panel"><div className="row between"><h3>Today’s Schedule</h3><button className="miniBtn" onClick={()=>setPage('calendar')}>Open calendar</button></div>{todaySessions.length===0 && <p className="muted">No sessions planned today. Add one from the calendar or FMA classes page.</p>}{todaySessions.map(s=><SessionRow key={s.id} event={s} onClick={()=>openSession(s)}/>)}</section>
     <section className="panel"><h3>Next Achievement</h3>{badges.filter(b=>!b.unlocked).slice(0,3).map(b=><div className="badgeProgress" key={b.id}><span>{b.icon}</span><div><b>{b.name}</b><p>{b.description}</p><div className="progress"><i style={{width:`${b.progress}%`}}/></div></div></div>)}</section>
   </div>
@@ -272,12 +302,16 @@ function ExerciseCard({e,onPlay}:{e:Exercise;onPlay:(e:Exercise)=>void}) {
 }
 
 function TrainingCalendar({events,setEvents,openSession}:{events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;openSession:(e:CalendarEvent)=>void}){
-  const days = weekDates();
+  const currentWeek = weekDates();
+  const nextWeek = Array.from({length:7}, (_,i)=>addDays(startOfWeek(), i+7));
   const [newDate,setNewDate]=useState(todayISO()); const [newTime,setNewTime]=useState('18:00'); const [newTitle,setNewTitle]=useState('Training Session'); const [newType,setNewType]=useState<SessionType>('Gym');
   function add(){ setEvents([...events,{id:crypto.randomUUID(), date:newDate, time:newTime, title:newTitle, type:newType, status:'planned'}]); }
+  function renderWeek(days: Date[], title: string){
+    return <div className="weekBlock"><h4>{title}</h4><div className="weekGrid">{days.map(d=>{ const dayEvents=events.filter(e=>e.date===iso(d)).sort((a,b)=>(a.time||'').localeCompare(b.time||'')); return <div className="dayColumn" key={iso(d)}><h4>{dayLabel(d)}</h4>{dayEvents.length===0 && <span className="emptyDay">No session</span>}{dayEvents.map(e=><button key={e.id} className={`calendarSession ${e.status}`} onClick={()=>openSession(e)}><span>{e.time}</span><b>{e.title}</b><em>{e.type}</em></button>)}</div>})}</div></div>
+  }
   return <div className="calendarPage">
-    <section className="panel"><div className="row between"><div><h3>Weekly Training Calendar</h3><p className="muted">Click any session to open the completion page.</p></div></div><div className="weekGrid">{days.map(d=>{ const dayEvents=events.filter(e=>e.date===iso(d)).sort((a,b)=>(a.time||'').localeCompare(b.time||'')); return <div className="dayColumn" key={iso(d)}><h4>{dayLabel(d)}</h4>{dayEvents.length===0 && <span className="emptyDay">No session</span>}{dayEvents.map(e=><button key={e.id} className={`calendarSession ${e.status}`} onClick={()=>openSession(e)}><span>{e.time}</span><b>{e.title}</b><em>{e.type}</em></button>)}</div>})}</div></section>
-    <section className="panel compact"><h3>Add Session</h3><div className="grid four"><label>Date<input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)}/></label><label>Time<input type="time" value={newTime} onChange={e=>setNewTime(e.target.value)}/></label><label>Type<select value={newType} onChange={e=>setNewType(e.target.value as SessionType)}>{sessionTypes.map(t=><option key={t}>{t}</option>)}</select></label><label>Title<input value={newTitle} onChange={e=>setNewTitle(e.target.value)}/></label></div><button className="primary" onClick={add}><Plus size={16}/>Add to calendar</button></section>
+    <section className="panel"><div className="row between"><div><h3>Training Calendar</h3><p className="muted">Current week and next week are shown. Click any session to open the completion page.</p></div></div><div className="calendarWeeks">{renderWeek(currentWeek,'Current Week')}{renderWeek(nextWeek,'Next Week')}</div></section>
+    <section className="panel compact addSessionPanel"><h3>Add Session</h3><div className="formGrid calendarForm"><label>Date<input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)}/></label><label>Time<input type="time" value={newTime} onChange={e=>setNewTime(e.target.value)}/></label><label>Type<select value={newType} onChange={e=>setNewType(e.target.value as SessionType)}>{sessionTypes.map(t=><option key={t}>{t}</option>)}</select></label><label>Title<input value={newTitle} onChange={e=>setNewTitle(e.target.value)}/></label></div><div className="formActions"><button className="primary" onClick={add}><Plus size={16}/>Add to calendar</button></div></section>
   </div>
 }
 const sessionTypes: SessionType[] = ['Home','Gym','FMA','MMA','BJJ','Boxing','Kickboxing','Cardio','Mobility','Physio','Recovery','Strength'];
@@ -288,22 +322,28 @@ function Today({events,exercises,logs,setLogs,onPlay,openSession}:{events:Calend
   return <section className="panel"><div className="row between"><div><h3>Today's Training</h3><p className="muted">Choose a date, open a session, follow the exercises and log completion.</p></div><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>{sessions.length===0 && <p className="muted">No sessions planned for this date.</p>}{sessions.map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}<QuickCompletion exercises={exercises} logs={logs} setLogs={setLogs} onPlay={onPlay}/></section>
 }
 
-function SessionWorkout({session,setSession,exercises,logs,setLogs,events,setEvents,onPlay}:{session:CalendarEvent|null; setSession:(s:CalendarEvent|null)=>void; exercises:Exercise[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; onPlay:(e:Exercise)=>void}){
+function SessionWorkout({session,setSession,exercises,plans,logs,setLogs,events,setEvents,onPlay}:{session:CalendarEvent|null; setSession:(s:CalendarEvent|null)=>void; exercises:Exercise[]; plans:WorkoutPlan[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; onPlay:(e:Exercise)=>void}){
   const fallback: CalendarEvent = session || { id:'adhoc', date:todayISO(), time:'', title:'Ad hoc Workout', type:'Gym', status:'planned' };
   const isClassSession = !!fallback.class_name || fallback.type === 'FMA';
   if (isClassSession) return <ClassSessionCompletion session={fallback} setSession={setSession} events={events} setEvents={setEvents}/>;
-  return <ExerciseSessionCompletion session={fallback} exercises={exercises} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} onPlay={onPlay}/>;
+  return <ExerciseSessionCompletion session={fallback} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} onPlay={onPlay}/>;
 }
 
-function ExerciseSessionCompletion({session,exercises,logs,setLogs,events,setEvents,onPlay}:{session:CalendarEvent; exercises:Exercise[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; onPlay:(e:Exercise)=>void}){
-  const picks = useMemo(()=>pickExercisesForSession(session, exercises), [session.id, exercises.length]);
+function ExerciseSessionCompletion({session,exercises,plans,logs,setLogs,events,setEvents,onPlay}:{session:CalendarEvent; exercises:Exercise[]; plans:WorkoutPlan[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; onPlay:(e:Exercise)=>void}){
+  const plan = plans.find(p=>p.id===session.workout_plan_id);
+  const picks = useMemo(()=>getSessionExercises(session, exercises, plans), [session.id, session.workout_plan_id, exercises.length, plans.length]);
   const [date,setDate]=useState(session.date || todayISO());
-  const [setRows,setSetRows]=useState<Record<string,ExerciseLogSet[]>>(()=>Object.fromEntries(picks.map(e=>[e.exercise_id,[1,2,3].map(n=>({set_number:n,reps:'',weight:'',completed:false}))])));
-  useEffect(()=>{ setSetRows(Object.fromEntries(picks.map(e=>[e.exercise_id,[1,2,3].map(n=>({set_number:n,reps:'',weight:'',completed:false}))]))); }, [picks.map(p=>p.exercise_id).join('|')]);
+  function plannedRows(exerciseId:string){
+    const planned = plan?.exercises.find(e=>e.exercise_id===exerciseId);
+    const count = Math.max(1, Number(planned?.planned_sets || 3));
+    return Array.from({length: count}, (_,i)=>({set_number:i+1,reps: planned?.planned_reps || '',weight: planned?.planned_weight || '',completed:false}));
+  }
+  const [setRows,setSetRows]=useState<Record<string,ExerciseLogSet[]>>(()=>Object.fromEntries(picks.map(e=>[e.exercise_id,plannedRows(e.exercise_id)])));
+  useEffect(()=>{ setSetRows(Object.fromEntries(picks.map(e=>[e.exercise_id,plannedRows(e.exercise_id)]))); }, [picks.map(p=>p.exercise_id).join('|'), plan?.id]);
   function updateSet(exId:string, idx:number, field:keyof ExerciseLogSet, value:any){ setSetRows(prev=>({...prev,[exId]:(prev[exId]||[]).map((s,i)=>i===idx?{...s,[field]:value}:s)})); }
   function completeExercise(e:Exercise, quick=false){ const sets = quick ? [] : (setRows[e.exercise_id] || []); const entry: WorkoutLog = { id:crypto.randomUUID(), session_id:session.id, date, session_type:session.type, exercise_id:e.exercise_id, exercise_name:titleCase(e.name), sets, completed:true, reps: sets.map(s=>s.reps).filter(Boolean).join(', '), weight: sets.map(s=>s.weight).filter(Boolean).join(', ') }; setLogs([entry,...logs]); }
   function completeSession(){ setEvents(events.map(e=>e.id===session.id?{...e,status:'completed'}:e)); }
-  return <section className="panel workoutCompletionPanel"><div className="sessionHeader"><div><span className={classNameForType(session.type)}>{session.type}</span><h3>{session.time ? `${session.time} · ` : ''}{session.title}</h3><p className="muted">Follow the programme for the selected date. Record sets, reps and weight where useful, or mark each exercise complete without logging numbers.</p></div><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label></div><div className="workoutList">{picks.map(e=><div className="workoutExercise" key={e.exercise_id}><div className="row between"><div><h3>{titleCase(e.name)}</h3><p>{titleCase(bodyOf(e))} · {titleCase(e.target)} · {titleCase(e.equipment)}</p></div><button onClick={()=>onPlay(e)} disabled={!safeVideo(e)}><Video size={16}/>Watch Demo</button></div><InstructionsBlock exercise={e}/><div className="setTable"><div className="setHead"><span>Set</span><span>Reps</span><span>Weight</span><span>Done</span></div>{(setRows[e.exercise_id] || []).map((s,idx)=><div className="setRow" key={s.set_number}><span>{s.set_number}</span><input value={s.reps||''} onChange={ev=>updateSet(e.exercise_id,idx,'reps',ev.target.value)} placeholder="8-12"/><input value={s.weight||''} onChange={ev=>updateSet(e.exercise_id,idx,'weight',ev.target.value)} placeholder="kg"/><input type="checkbox" checked={!!s.completed} onChange={ev=>updateSet(e.exercise_id,idx,'completed',ev.target.checked)}/></div>)}</div><div className="row actions"><button className="primary" onClick={()=>completeExercise(e)}><CheckCircle2 size={16}/>Save exercise log</button><button onClick={()=>completeExercise(e,true)}>Mark complete only</button></div></div>)}</div><button className="primary big" onClick={completeSession}><Trophy size={18}/>Mark session completed</button></section>
+  return <section className="panel workoutCompletionPanel"><div className="sessionHeader"><div><span className={classNameForType(session.type)}>{session.type}</span><h3>{session.time ? `${session.time} · ` : ''}{session.title}</h3><p className="muted">{plan ? `Assigned programme: ${plan.name}. ` : ''}Follow the programme for the selected date. Record sets, reps and weight where useful, or mark each exercise complete without logging numbers.</p></div><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label></div><div className="workoutList">{picks.map(e=><div className="workoutExercise" key={e.exercise_id}><div className="row between"><div><h3>{titleCase(e.name)}</h3><p>{titleCase(bodyOf(e))} · {titleCase(e.target)} · {titleCase(e.equipment)}</p></div><button onClick={()=>onPlay(e)} disabled={!safeVideo(e)}><Video size={16}/>Watch Demo</button></div><InstructionsBlock exercise={e}/><div className="setTable"><div className="setHead"><span>Set</span><span>Reps</span><span>Weight</span><span>Done</span></div>{(setRows[e.exercise_id] || []).map((s,idx)=><div className="setRow" key={s.set_number}><span>{s.set_number}</span><input value={s.reps||''} onChange={ev=>updateSet(e.exercise_id,idx,'reps',ev.target.value)} placeholder="8-12"/><input value={s.weight||''} onChange={ev=>updateSet(e.exercise_id,idx,'weight',ev.target.value)} placeholder="kg"/><input type="checkbox" checked={!!s.completed} onChange={ev=>updateSet(e.exercise_id,idx,'completed',ev.target.checked)}/></div>)}</div><div className="row actions"><button className="primary" onClick={()=>completeExercise(e)}><CheckCircle2 size={16}/>Save exercise log</button><button onClick={()=>completeExercise(e,true)}>Mark complete only</button></div></div>)}</div><button className="primary big" onClick={completeSession}><Trophy size={18}/>Mark session completed</button></section>
 }
 
 function ClassSessionCompletion({session,setSession,events,setEvents}:{session:CalendarEvent; setSession:(s:CalendarEvent|null)=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void}){
@@ -319,6 +359,28 @@ function ClassSessionCompletion({session,setSession,events,setEvents}:{session:C
 function InstructionsBlock({exercise}:{exercise:Exercise}){ const [open,setOpen]=useState(false); const instructions=(exercise.instructions||[]).filter(s=>s && !/no written instructions stored yet/i.test(s)); return <div className="compactInstructions"><button onClick={()=>setOpen(!open)}>{open?<ChevronDown size={16}/>:<ChevronRight size={16}/>} Exercise Details & Instructions</button>{open && <div className="instructionsPanel">{exercise.description && <p>{sentence(exercise.description)}</p>}{instructions.length>0 && <ol>{instructions.map((s,i)=><li key={i}>{sentence(s)}</li>)}</ol>}<div className="chips">{[bodyOf(exercise),exercise.target,...(exercise.secondary_muscles||[])].filter(Boolean).map(x=><span key={x}>{titleCase(x)}</span>)}</div></div>}</div> }
 function pickExercisesForSession(session:CalendarEvent, exercises:Exercise[]){ const t=session.type; let terms:string[]=['plank','push-up','dead bug','squat','row']; if(t==='Home') terms=['ladder','shadow','plank','mountain climber','push-up']; if(t==='Gym'||t==='Strength') terms=['back squat','romanian deadlift','bench press','shoulder press','row']; if(t==='FMA'||t==='MMA'||t==='Boxing'||t==='Kickboxing') terms=['agility','boxing','jumping jack','mountain climber','plank']; if(t==='BJJ') terms=['bear crawl','bridge','superman','plank','hip']; if(t==='Mobility'||t==='Physio'||t==='Recovery') terms=['stretch','mobility','rotation','hamstring','shoulder']; const found=terms.map(term=>exercises.find(e=>e.name.toLowerCase().includes(term))).filter(Boolean) as Exercise[]; return found.length ? found.slice(0,6) : exercises.slice(0,5); }
 
+
+function getSessionExercises(session: CalendarEvent, exercises: Exercise[], plans: WorkoutPlan[]): Exercise[] {
+  const plan = plans.find(p => p.id === session.workout_plan_id);
+  if (plan?.exercises?.length) {
+    return plan.exercises.map(pe => {
+      const detailed = exercises.find(e => e.exercise_id === pe.exercise_id);
+      return detailed || {
+        exercise_id: pe.exercise_id,
+        name: pe.name,
+        description: pe.notes || 'Assigned exercise from trainer programme.',
+        body_part: 'programme',
+        target: 'assigned focus',
+        equipment: 'as programmed',
+        category: plan.session_type || 'Gym',
+        location: plan.location || 'Training',
+        instructions: [],
+      } as Exercise;
+    });
+  }
+  return pickExercisesForSession(session, exercises);
+}
+
 function QuickCompletion({exercises,logs,setLogs,onPlay}:{exercises:Exercise[];logs:WorkoutLog[];setLogs:(l:WorkoutLog[])=>void;onPlay:(e:Exercise)=>void}){ const picks=exercises.slice(0,3); return <div className="quickBox"><h3>Quick Exercise Completion</h3><p className="muted">Use this when James completes a standalone drill outside a planned session.</p><div className="grid three">{picks.map(e=><div className="miniExercise" key={e.exercise_id}><b>{titleCase(e.name)}</b><span>{titleCase(bodyOf(e))}</span><div className="row actions"><button onClick={()=>onPlay(e)}>Demo</button><button className="primary" onClick={()=>setLogs([{id:crypto.randomUUID(),date:todayISO(),session_type:'Home',exercise_id:e.exercise_id,exercise_name:titleCase(e.name),sets:[],completed:true},...logs])}>Complete</button></div></div>)}</div></div> }
 
 function WorkoutBuilder({exercises,plans,setPlans}:{exercises:Exercise[];plans:WorkoutPlan[];setPlans:(p:WorkoutPlan[])=>void}){
@@ -333,7 +395,7 @@ function WorkoutBuilder({exercises,plans,setPlans}:{exercises:Exercise[];plans:W
 function FmaClasses({events,setEvents,openSession}:{events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;openSession:(e:CalendarEvent)=>void}){
   const [selected,setSelected]=useState(fmaClasses[0]); const [date,setDate]=useState(todayISO()); const [time,setTime]=useState('19:00');
   function add(){ const event={id:crypto.randomUUID(),date,time,title:`FMA ${selected.name}`,type:'FMA' as SessionType,status:'planned' as const,class_name:selected.name}; setEvents([...events,event]); }
-  return <div className="fmaLayout"><section className="panel"><h3>FMA Chester Classes</h3><p className="muted">Select a class, choose a date and time, then add it to James’s calendar as a class session. Class sessions track attendance only — no sets, reps or exercise log required.</p><div className="classList">{fmaClasses.map(c=><button className={selected.name===c.name?'selected':''} onClick={()=>setSelected(c)} key={c.name}><b>{c.name}</b><span>{c.focus}</span></button>)}</div></section><section className="panel"><h3>Add {selected.name}</h3><p>{selected.focus}</p><div className="grid two"><label>Class Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Class Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><button className="primary big" onClick={add}><CalendarDays size={18}/>Add class to calendar</button><h3>Upcoming FMA Sessions</h3>{events.filter(e=>e.type==='FMA').map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}</section></div>
+  return <div className="fmaLayout"><section className="panel"><h3>FMA Chester Classes</h3><p className="muted">Select a class, choose a date and time, then add it to James’s calendar as a class session. Class sessions track attendance only — no sets, reps or exercise log required.</p><div className="classList">{fmaClasses.map(c=><button className={selected.name===c.name?'selected':''} onClick={()=>setSelected(c)} key={c.name}><b>{c.name}</b><span>{c.focus}</span></button>)}</div></section><section className="panel fmaSchedulePanel"><h3>Add {selected.name}</h3><p>{selected.focus}</p><div className="formGrid two"><label>Class Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Class Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary big" onClick={add}><CalendarDays size={18}/>Add class to calendar</button></div><h3>Upcoming FMA Sessions</h3>{events.filter(e=>e.type==='FMA').map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}</section></div>
 }
 
 function Stats({logs,events,profile}:{logs:WorkoutLog[];events:CalendarEvent[];profile:AthleteProfile}){
@@ -344,7 +406,7 @@ function Stats({logs,events,profile}:{logs:WorkoutLog[];events:CalendarEvent[];p
   const thisWeek=events.filter(e=>e.date>=weekStart && e.date<=weekEnd && e.status==='completed');
   const typeCounts=sessionTypes.map(t=>({type:t,count:thisWeek.filter(e=>e.type===t).length})).filter(x=>x.count>0);
   const chart = Array.from({length:7}, (_,i)=>{ const d=iso(addDays(startOfWeek(),i)); return { day: addDays(startOfWeek(),i).toLocaleDateString('en-GB',{weekday:'short'}), sessions: events.filter(e=>e.date===d && e.status==='completed').length, exercises: logs.filter(l=>l.date===d && l.completed).length }; });
-  return <div><div className="kpiRow"><Kpi label="Exercises Completed" value={exercisesCompleted}/><Kpi label="Sessions Completed" value={sessionsCompleted}/><Kpi label="Workout Streak" value={`${streak} days`}/><Kpi label="Current Weight" value={`${profile.weight_kg || '—'} kg`}/></div><section className="panel"><h3>This Week By Session Type</h3>{typeCounts.length===0 ? <p className="muted">No completed sessions this week yet.</p> : <div className="typeCountGrid">{typeCounts.map(x=><div className="typeCount" key={x.type}><span className={classNameForType(x.type)}>{x.type}</span><b>{x.count}</b></div>)}</div>}</section><section className="panel"><h3>Weekly Output</h3><div className="chart"><ResponsiveContainer width="100%" height={260}><BarChart data={chart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="day"/><YAxis/><Tooltip/><Bar dataKey="sessions"/><Bar dataKey="exercises"/></BarChart></ResponsiveContainer></div></section></div>
+  return <div><div className="kpiRow statsKpis"><Kpi label="Exercises Completed" value={exercisesCompleted}/><Kpi label="Sessions Completed" value={sessionsCompleted}/><Kpi label="Workout Streak" value={`${streak} days`}/><Kpi label="Current Weight" value={`${profile.weight_kg || '—'} kg`}/></div><section className="panel"><h3>This Week By Session Type</h3>{typeCounts.length===0 ? <p className="muted">No completed sessions this week yet.</p> : <div className="typeCountGrid">{typeCounts.map(x=><div className="typeCount" key={x.type}><span className={classNameForType(x.type)}>{x.type}</span><b>{x.count}</b></div>)}</div>}</section><section className="panel"><h3>Weekly Output</h3><div className="chart"><ResponsiveContainer width="100%" height={260}><BarChart data={chart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="day"/><YAxis/><Tooltip/><Bar dataKey="sessions"/><Bar dataKey="exercises"/></BarChart></ResponsiveContainer></div></section></div>
 }
 function calcStreak(logs:WorkoutLog[], events:CalendarEvent[]){ const doneDates=new Set([...logs.filter(l=>l.completed).map(l=>l.date), ...events.filter(e=>e.status==='completed').map(e=>e.date)]); let streak=0; for(let i=0;i<365;i++){ const d=iso(addDays(new Date(), -i)); if(doneDates.has(d)) streak++; else if(i>0) break; } return streak; }
 
@@ -352,9 +414,39 @@ function Badges({badges}:{badges:Badge[]}){ return <section className="panel"><h
 function Profile({profile,setProfile}:{profile:AthleteProfile;setProfile:(p:AthleteProfile)=>void}){ function upd(k:keyof AthleteProfile,v:any){ setProfile({...profile,[k]:v}); } return <section className="panel profilePage"><h3>Athlete Profile</h3><p className="muted">These details help personalise targets, BMI, competition planning and progress tracking.</p><div className="grid three"><Field label="Athlete Name" help="Shown throughout the app." value={profile.name} onChange={v=>upd('name',v)}/><Field label="Age" help="Current age in years." value={profile.age||''} type="number" onChange={v=>upd('age',Number(v))}/><Field label="Gym / Academy" help="Primary training location." value={profile.gym||''} onChange={v=>upd('gym',v)}/><Field label="Height (cm)" help="Used to calculate BMI." value={profile.height_cm||''} type="number" onChange={v=>upd('height_cm',Number(v))}/><Field label="Weight (kg)" help="Current body weight." value={profile.weight_kg||''} type="number" onChange={v=>upd('weight_kg',Number(v))}/><Field label="Competition Weight (kg)" help="Target fight or competition weight." value={profile.competition_weight_kg||''} type="number" onChange={v=>upd('competition_weight_kg',Number(v))}/><Field label="Belt Rank" help="Current martial arts rank." value={profile.belt_rank||''} onChange={v=>upd('belt_rank',v)}/><Field label="Profile Photo URL" help="Optional image link for later use." value={profile.profile_photo_url||''} onChange={v=>upd('profile_photo_url',v)}/><div className="profileStat"><span>BMI</span><b>{bmi(profile)||'—'}</b><em>Calculated from height and weight.</em></div></div><label className="fullLabel">Athlete Goal<span>Main training objective.</span><textarea value={profile.goal||''} onChange={e=>upd('goal',e.target.value)}/></label></section> }
 function Field({label,help,value,onChange,type='text'}:{label:string;help:string;value:any;type?:string;onChange:(v:string)=>void}){ return <label className="fieldLabel">{label}<span>{help}</span><input type={type} value={value} onChange={e=>onChange(e.target.value)}/></label> }
 
-function Admin({profile,events,plans,exercises,setExercises,users,setUsers,athletes,setAthletes}:{profile:AthleteProfile;events:CalendarEvent[];plans:WorkoutPlan[];exercises:Exercise[];setExercises:(e:Exercise[])=>void;users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){
-  return <div className="adminGrid"><section className="panel"><h3>Admin Console</h3><div className="grid three"><Kpi label="Athletes" value={athletes.length}/><Kpi label="Sessions Planned" value={events.length}/><Kpi label="Saved Programmes" value={plans.length}/></div></section><AthleteCreator users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/><ManualExercise setExercises={setExercises} exercises={exercises}/></div>
+function Admin({profile,events,setEvents,plans,exercises,setExercises,users,setUsers,athletes,setAthletes}:{profile:AthleteProfile;events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;plans:WorkoutPlan[];exercises:Exercise[];setExercises:(e:Exercise[])=>void;users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){
+  return <div className="adminGrid"><section className="panel"><h3>Admin Console</h3><div className="grid three"><Kpi label="Athletes" value={athletes.length}/><Kpi label="Sessions Planned" value={events.length}/><Kpi label="Saved Programmes" value={plans.length}/></div></section><WorkoutAssignment plans={plans} athletes={athletes} events={events} setEvents={setEvents}/><AthleteCreator users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/><ManualExercise setExercises={setExercises} exercises={exercises}/></div>
 }
+
+function WorkoutAssignment({plans,athletes,events,setEvents}:{plans:WorkoutPlan[]; athletes:AthleteProfile[]; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void}){
+  const athleteOptions = athletes.filter(a=>a.role==='athlete');
+  const [planId,setPlanId]=useState(plans[0]?.id || '');
+  const [athleteId,setAthleteId]=useState(athleteOptions[0]?.id || '');
+  const [date,setDate]=useState(todayISO());
+  const [time,setTime]=useState('18:00');
+  const [status,setStatus]=useState('');
+  useEffect(()=>{ if(!planId && plans[0]) setPlanId(plans[0].id); }, [plans.length]);
+  useEffect(()=>{ if(!athleteId && athleteOptions[0]) setAthleteId(athleteOptions[0].id); }, [athleteOptions.length]);
+  function assign(){
+    const plan = plans.find(p=>p.id===planId);
+    const athlete = athleteOptions.find(a=>a.id===athleteId);
+    if(!plan || !athlete){ setStatus('Create a saved programme and athlete before assigning.'); return; }
+    const event: CalendarEvent = {
+      id: crypto.randomUUID(),
+      athlete_id: athlete.id,
+      workout_plan_id: plan.id,
+      date,
+      time,
+      title: plan.name,
+      type: plan.session_type || 'Gym',
+      status: 'planned',
+    };
+    setEvents([event,...events]);
+    setStatus(`${plan.name} assigned to ${athlete.name} for ${date} at ${time}.`);
+  }
+  return <section className="panel"><h3>Assign Workout To Athlete</h3><p className="muted">Create workouts in the Workout Builder, then push the saved workout to an athlete calendar. The athlete sees it in their own calendar and can complete it from the session page.</p>{plans.length===0 ? <p className="status">No saved workouts yet. Create and save a workout in the Workout Builder first.</p> : <><div className="grid two"><label>Saved Workout<select value={planId} onChange={e=>setPlanId(e.target.value)}>{plans.map(p=><option key={p.id} value={p.id}>{p.name} · {p.exercises.length} exercises</option>)}</select></label><label>Assign To Athlete<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Session Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary" onClick={assign}><CalendarDays size={16}/>Push workout to athlete</button></div></>}{status && <div className="status">{status}</div>}<div className="assignmentList"><h4>Recently Assigned</h4>{events.filter(e=>e.workout_plan_id).slice(0,5).map(e=><div className="preview" key={e.id}><b>{e.title}</b><span>{e.date} · {e.time || 'Time TBC'}</span><em>{athletes.find(a=>a.id===e.athlete_id)?.name || 'Athlete not assigned'}</em></div>)}</div></section>
+}
+
 function AthleteCreator({users,setUsers,athletes,setAthletes}:{users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){
   const [name,setName]=useState(''); const [email,setEmail]=useState(''); const [password,setPassword]=useState('training123');
   function create(){ const id=crypto.randomUUID(); const athlete={id,name,email,role:'athlete' as const,gym:'FMA Chester',goal:'Build consistent training habits.'}; setAthletes([...athletes,athlete]); setUsers([...users,{id:`user-${id}`,email,password,name,role:'athlete',athlete_id:id}]); setName(''); setEmail(''); }
@@ -368,7 +460,7 @@ function ManualExercise({exercises,setExercises}:{exercises:Exercise[];setExerci
 }
 
 function Importer({setExercises,reloadSupabase,exercises}:{setExercises:(e:Exercise[])=>void; reloadSupabase:()=>void; exercises:Exercise[]}) {
-  const [loaded,setLoaded]=useState(false); const [status,setStatus]=useState('Ready to load the bundled V2.2.1 catalogue.'); const [busy,setBusy]=useState(false); const [missingOpen,setMissingOpen]=useState(false);
+  const [loaded,setLoaded]=useState(false); const [status,setStatus]=useState('Ready to load the bundled V2.2.3 catalogue.'); const [busy,setBusy]=useState(false); const [missingOpen,setMissingOpen]=useState(false);
   const missing = localCatalogue.filter(e=>!e.video_path && !e.video_url).slice(0,50);
   const prepared = useMemo(()=>localCatalogue.map(e=>({...e, video_url: e.video_url || buildVideoUrl(e.video_path), has_video: !!(e.video_url || e.video_path)})),[]);
   async function importLocal(){ setExercises(prepared); setStatus(`Loaded ${prepared.length} exercises into app data.`); }

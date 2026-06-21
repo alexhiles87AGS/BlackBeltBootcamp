@@ -25,3 +25,12 @@ html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}body{overflow-x:hidden
 @media(max-width:390px){
   .topBrand b{max-width:170px}.pageFrame{padding-left:14px;padding-right:14px}.panel{padding:15px}.athleteHero h1{font-size:1.58rem}.kpi{min-width:142px}.dayColumn{min-width:82vw}button{padding:11px 13px}.classHero h3{font-size:1.32rem}
 }
+
+/* V2.2.2 final polish: login, calendar forms, two-wide stats and dashboard tiles */
+.kpiRow{grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible}.kpi{min-width:0}.readinessRing{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}.readinessRing span{display:block;line-height:1.15}.calendarWeeks{display:grid;gap:22px}.weekBlock>h4{margin:0 0 12px;color:#d8efff;font-size:1.05rem}.formGrid{display:grid;gap:16px;align-items:end}.formGrid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.calendarForm{grid-template-columns:repeat(2,minmax(0,1fr))}.formActions{display:flex;justify-content:flex-start;margin-top:16px}.formActions .primary{width:auto}.addSessionPanel,.fmaSchedulePanel{overflow:hidden}.addSessionPanel label,.fmaSchedulePanel label{min-width:0}.addSessionPanel input,.addSessionPanel select,.fmaSchedulePanel input,.fmaSchedulePanel select{min-width:0}.loginCard .smallText{margin-top:16px}.dashboardKpis,.statsKpis{align-items:stretch}.dashboardKpis .kpi,.statsKpis .kpi{display:flex;flex-direction:column;justify-content:space-between;min-height:118px}
+
+@media(max-width:720px){
+  .kpiRow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0;margin-bottom:16px;overflow:visible;scroll-snap-type:none}.kpi{min-width:0;scroll-snap-align:unset;padding:14px;border-radius:18px}.kpi b{font-size:1.42rem;line-height:1.05}.kpi span{font-size:.78rem;line-height:1.2}.readinessRing{justify-self:start}.calendarWeeks{gap:18px}.weekBlock>h4{font-size:1rem;margin-left:2px}.calendarForm,.formGrid.two{grid-template-columns:1fr}.formActions{margin-top:14px}.formActions .primary,.formActions .big{width:100%;min-height:50px}.addSessionPanel h3,.fmaSchedulePanel h3{margin-top:0}.loginForm input{height:50px}.loginForm .big{width:100%;min-height:52px}
+}
+
+@media(max-width:370px){.kpiRow{grid-template-columns:1fr}.dashboardKpis .kpi,.statsKpis .kpi{min-height:auto}}

@@ -79,6 +79,7 @@ export type CalendarEvent = {
   end_time?: string;
   status: 'planned' | 'completed' | 'missed';
   workout_plan_id?: string;
+  athlete_id?: string;
   class_name?: string;
 };
 
