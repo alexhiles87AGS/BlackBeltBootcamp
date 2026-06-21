@@ -30,7 +30,7 @@ const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[] 
   { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'] },
 ];
 
-const APP_VERSION = '2.2.7-admin-diary-fresh-calendar';
+const APP_VERSION = '2.2.8-assignment-profile-today-fix';
 
 const cleanProfiles: AthleteProfile[] = [
   {
@@ -177,22 +177,90 @@ function getInitialEvents(): CalendarEvent[] {
   ];
 }
 
+function isCanonicalJamesIdentity(id?: string | null, email?: string | null, name?: string | null){
+  const nId = normalise(id);
+  const nEmail = normalise(email);
+  const nName = normalise(name);
+  return nId === 'james-athlete' || nEmail === 'james.hiles@blackbeltbootcamp.app' || nEmail === 'james@blackbeltbootcamp.app' || nName === 'james hiles';
+}
+function canonicaliseUsers(rawUsers: AppUser[]){
+  const extras = rawUsers.filter(u => {
+    const email = normalise(u.email);
+    const name = normalise(u.name);
+    if (email === 'alex.hiles.ags@gmail.com' || name === 'alex hiles') return false;
+    if (isCanonicalJamesIdentity(u.athlete_id, u.email, u.name)) return false;
+    return true;
+  });
+  return [cleanUsers[0], cleanUsers[1], ...extras];
+}
+function canonicaliseAthletes(rawAthletes: AthleteProfile[]){
+  const extras = rawAthletes.filter(a => {
+    const email = normalise(a.email);
+    const name = normalise(a.name);
+    if (email === 'alex.hiles.ags@gmail.com' || name === 'alex hiles' || a.id === 'alex-admin') return false;
+    if (isCanonicalJamesIdentity(a.id, a.email, a.name)) return false;
+    return true;
+  });
+  return [cleanProfiles[0], cleanProfiles[1], ...extras];
+}
+function canonicaliseEvents(rawEvents: CalendarEvent[]){
+  return rawEvents.map(event => {
+    if (isCanonicalJamesIdentity(event.athlete_id, event.athlete_email, event.athlete_name)) {
+      return {
+        ...event,
+        athlete_id: 'james-athlete',
+        athlete_email: 'james.hiles@blackbeltbootcamp.app',
+        athlete_name: 'James Hiles',
+      };
+    }
+    return event;
+  });
+}
+function canonicaliseCurrentUser(user: AppUser | null){
+  if (!user) return null;
+  if (normalise(user.email) === 'alex.hiles.ags@gmail.com' || normalise(user.name) === 'alex hiles') return cleanUsers[0];
+  if (isCanonicalJamesIdentity(user.athlete_id, user.email, user.name)) return cleanUsers[1];
+  return user;
+}
+function getAthleteOptions(athletes: AthleteProfile[]){
+  const seen = new Set<string>();
+  return athletes
+    .filter(a => a.role === 'athlete')
+    .filter(a => {
+      const key = isCanonicalJamesIdentity(a.id, a.email, a.name) ? 'james-athlete' : `${normalise(a.email)}|${normalise(a.name)}|${a.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function migrateFinalState(){
   try {
-    // From V2.2.3 onwards, upgrades must not wipe schedules, programmes, logs or login state.
-    // Seed the clean Alex/James profiles only when the local store does not already exist.
+    // Seed only if the local store is empty, then normalise the two built-in profiles.
     if (!localStorage.getItem('bbb_users')) localStorage.setItem('bbb_users', JSON.stringify(cleanUsers));
     if (!localStorage.getItem('bbb_athletes')) localStorage.setItem('bbb_athletes', JSON.stringify(cleanProfiles));
     if (!localStorage.getItem('bbb_profile')) localStorage.setItem('bbb_profile', JSON.stringify(defaultProfile));
     if (!localStorage.getItem('bbb_events')) localStorage.setItem('bbb_events', JSON.stringify([]));
     if (!localStorage.getItem('bbb_plans')) localStorage.setItem('bbb_plans', JSON.stringify([]));
     if (!localStorage.getItem('bbb_logs')) localStorage.setItem('bbb_logs', JSON.stringify([]));
-    if (localStorage.getItem('bbb_james_calendar_fresh_v227') !== 'done') {
-      const currentEvents = JSON.parse(localStorage.getItem('bbb_events') || '[]') as CalendarEvent[];
-      const cleanedEvents = currentEvents.filter(event => !isJamesCalendarEvent(event));
-      localStorage.setItem('bbb_events', JSON.stringify(cleanedEvents));
-      localStorage.setItem('bbb_james_calendar_fresh_v227', 'done');
-    }
+
+    const users = canonicaliseUsers(JSON.parse(localStorage.getItem('bbb_users') || '[]'));
+    const athletes = canonicaliseAthletes(JSON.parse(localStorage.getItem('bbb_athletes') || '[]'));
+    const events = canonicaliseEvents(JSON.parse(localStorage.getItem('bbb_events') || '[]'));
+    const currentUser = canonicaliseCurrentUser(JSON.parse(localStorage.getItem('bbb_current_user') || 'null'));
+    const currentProfile = JSON.parse(localStorage.getItem('bbb_profile') || 'null') as AthleteProfile | null;
+    const profile = currentProfile && isCanonicalJamesIdentity(currentProfile.id, currentProfile.email, currentProfile.name)
+      ? cleanProfiles[1]
+      : currentProfile && (normalise(currentProfile.email) === 'alex.hiles.ags@gmail.com' || normalise(currentProfile.name) === 'alex hiles')
+        ? cleanProfiles[0]
+        : currentProfile || defaultProfile;
+
+    localStorage.setItem('bbb_users', JSON.stringify(users));
+    localStorage.setItem('bbb_athletes', JSON.stringify(athletes));
+    localStorage.setItem('bbb_events', JSON.stringify(events));
+    localStorage.setItem('bbb_profile', JSON.stringify(profile));
+    if (currentUser) localStorage.setItem('bbb_current_user', JSON.stringify(currentUser));
+    localStorage.setItem('bbb_removed_old_james_profile_v228', 'done');
     localStorage.setItem('bbb_app_version', APP_VERSION);
   } catch { /* local storage unavailable */ }
 }
@@ -261,13 +329,13 @@ function App() {
   return <div className="appShell">
     <header className="topbar">
       <button className="iconButton" onClick={()=>setDrawerOpen(true)} aria-label="Open menu"><Menu size={24}/></button>
-      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.7</span></div></div>
+      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.8</span></div></div>
       <div className="topContext"><span>{currentUser.name}</span><em>{titleCase(currentUser.role)}</em></div>
     </header>
 
     {drawerOpen && <div className="drawerBackdrop" onClick={()=>setDrawerOpen(false)} />}
     <aside className={`drawer ${drawerOpen ? 'open' : ''}`}>
-      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.7</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
+      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.8</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
       <div className="drawerUser"><b>{currentUser.name}</b><span>{currentUser.email}</span><em>{titleCase(currentUser.role)} profile</em></div>
       <nav>{visibleNav.map(n => <button key={n.page} onClick={() => go(n.page)} className={page===n.page?'active':''}>{n.icon}<span>{n.label}</span></button>)}</nav>
       <button className="logoutButton" onClick={handleLogout}><LogOut size={18}/> Sign out</button>
@@ -396,7 +464,7 @@ const sessionTypes: SessionType[] = ['Home','Gym','FMA','MMA','BJJ','Boxing','Ki
 function Today({events,exercises,logs,setLogs,onPlay,openSession}:{events:CalendarEvent[];exercises:Exercise[];logs:WorkoutLog[];setLogs:(l:WorkoutLog[])=>void;onPlay:(e:Exercise)=>void;openSession:(e:CalendarEvent)=>void}){
   const [date,setDate]=useState(todayISO());
   const sessions=events.filter(e=>e.date===date).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
-  return <section className="panel"><div className="row between"><div><h3>Today's Training</h3><p className="muted">Choose a date, open a session, follow the exercises and log completion.</p></div><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>{sessions.length===0 && <p className="muted">No sessions planned for this date.</p>}{sessions.map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}<QuickCompletion exercises={exercises} logs={logs} setLogs={setLogs} onPlay={onPlay}/></section>
+  return <section className="panel"><div className="row between"><div><h3>Today's Training</h3><p className="muted">Choose a date, open a session, follow the exercises and log completion.</p></div><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>{sessions.length===0 && <p className="muted">No sessions planned for this date.</p>}{sessions.map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}</section>
 }
 
 function SessionWorkout({session,setSession,exercises,plans,logs,setLogs,events,setEvents,onPlay}:{session:CalendarEvent|null; setSession:(s:CalendarEvent|null)=>void; exercises:Exercise[]; plans:WorkoutPlan[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; onPlay:(e:Exercise)=>void}){
@@ -532,7 +600,7 @@ function Admin({profile,events,setEvents,plans,exercises,setExercises,users,setU
 }
 
 function AdminTrainingDiary({events,athletes,users}:{events:CalendarEvent[]; athletes:AthleteProfile[]; users:AppUser[]}){
-  const athleteOptions = athletes.filter(a=>a.role==='athlete');
+  const athleteOptions = getAthleteOptions(athletes);
   const defaultAthlete = athleteOptions.find(a=>normalise(a.name)==='james hiles') || athleteOptions[0];
   const [athleteId,setAthleteId] = useState(defaultAthlete?.id || '');
   useEffect(()=>{ if(!athleteId && defaultAthlete) setAthleteId(defaultAthlete.id); }, [athleteOptions.length]);
@@ -545,14 +613,14 @@ function AdminTrainingDiary({events,athletes,users}:{events:CalendarEvent[]; ath
 }
 
 function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:WorkoutPlan[]; athletes:AthleteProfile[]; users:AppUser[]; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void}){
-  const athleteOptions = athletes.filter(a=>a.role==='athlete');
+  const athleteOptions = getAthleteOptions(athletes);
   const [planId,setPlanId]=useState(plans[0]?.id || '');
-  const [athleteId,setAthleteId]=useState(athleteOptions[0]?.id || '');
+  const [athleteId,setAthleteId]=useState((athleteOptions.find(a=>normalise(a.name)==='james hiles') || athleteOptions[0])?.id || '');
   const [date,setDate]=useState(todayISO());
   const [time,setTime]=useState('18:00');
   const [status,setStatus]=useState('');
   useEffect(()=>{ if(!planId && plans[0]) setPlanId(plans[0].id); }, [plans.length]);
-  useEffect(()=>{ if(!athleteId && athleteOptions[0]) setAthleteId(athleteOptions[0].id); }, [athleteOptions.length]);
+  useEffect(()=>{ if(!athleteId && athleteOptions[0]) setAthleteId((athleteOptions.find(a=>normalise(a.name)==='james hiles') || athleteOptions[0]).id); }, [athleteOptions.length]);
   function assign(){
     const plan = plans.find(p=>p.id===planId);
     const athlete = athleteOptions.find(a=>a.id===athleteId);
@@ -571,7 +639,9 @@ function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:Workou
       type: plan.session_type || 'Gym',
       status: 'planned',
     };
-    setEvents([event,...events]);
+    const nextEvents = [event, ...events.filter(e => e.id !== event.id)];
+    setEvents(nextEvents);
+    setStorage('bbb_events', nextEvents);
     setStatus(`${plan.name} has been pushed to ${assigned.name}. Log in as ${assigned.name} to see it in their Training Calendar on ${date} at ${time}.`);
   }
   return <section className="panel"><h3>Assign Workout To Athlete</h3><p className="muted">Create workouts in the Workout Builder, then push the saved workout to a selected athlete. The session is attached to the athlete profile selected below, not the trainer profile.</p>{plans.length===0 ? <p className="status">No saved workouts yet. Create and save a workout in the Workout Builder first.</p> : <><div className="grid two"><label>Saved Workout<select value={planId} onChange={e=>setPlanId(e.target.value)}>{plans.map(p=><option key={p.id} value={p.id}>{p.name} · {p.exercises.length} exercises</option>)}</select></label><label>Assign To Athlete<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Session Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary" onClick={assign}><CalendarDays size={16}/>Push workout to athlete</button></div></>}{status && <div className="status">{status}</div>}<div className="assignmentList"><h4>Recently Assigned To Athletes</h4>{events.filter(e=>e.workout_plan_id && e.athlete_id).slice(0,5).map(e=><div className="preview" key={e.id}><b>{e.title}</b><span>{e.date} · {e.time || 'Time TBC'}</span><em>{e.athlete_name || athletes.find(a=>a.id===e.athlete_id)?.name || 'Athlete not assigned'}</em></div>)}</div></section>
@@ -580,7 +650,7 @@ function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:Workou
 function AthleteCreator({users,setUsers,athletes,setAthletes}:{users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){
   const [name,setName]=useState(''); const [email,setEmail]=useState(''); const [password,setPassword]=useState('training123');
   function create(){ const id=crypto.randomUUID(); const athlete={id,name,email,role:'athlete' as const,gym:'FMA Chester',goal:'Build consistent training habits.'}; setAthletes([...athletes,athlete]); setUsers([...users,{id:`user-${id}`,email,password,name,role:'athlete',athlete_id:id}]); setName(''); setEmail(''); }
-  return <section className="panel"><h3>Create Athlete</h3><p className="muted">Creates a local athlete profile and login. For full Supabase Auth, invite the user in Supabase Auth and mirror the role in profiles.</p><div className="grid three"><label>Name<input value={name} onChange={e=>setName(e.target.value)} placeholder="Athlete name"/></label><label>Email<input value={email} onChange={e=>setEmail(e.target.value)} placeholder="athlete@email.com"/></label><label>Temporary Password<input value={password} onChange={e=>setPassword(e.target.value)}/></label></div><button className="primary" onClick={create} disabled={!name||!email}><Users size={16}/>Create Athlete</button>{athletes.map(a=><div className="preview" key={a.id}><b>{a.name}</b><span>{a.email}</span><em>{a.gym}</em></div>)}</section>
+  return <section className="panel"><h3>Create Athlete</h3><p className="muted">Creates a local athlete profile and login. For full Supabase Auth, invite the user in Supabase Auth and mirror the role in profiles.</p><div className="grid three"><label>Name<input value={name} onChange={e=>setName(e.target.value)} placeholder="Athlete name"/></label><label>Email<input value={email} onChange={e=>setEmail(e.target.value)} placeholder="athlete@email.com"/></label><label>Temporary Password<input value={password} onChange={e=>setPassword(e.target.value)}/></label></div><button className="primary" onClick={create} disabled={!name||!email}><Users size={16}/>Create Athlete</button>{canonicaliseAthletes(athletes).map(a=><div className="preview" key={a.id}><b>{a.name}</b><span>{a.email}</span><em>{a.gym}</em></div>)}</section>
 }
 function ManualExercise({exercises,setExercises}:{exercises:Exercise[];setExercises:(e:Exercise[])=>void}){
   const [name,setName]=useState(''); const [description,setDescription]=useState(''); const [body,setBody]=useState('waist'); const [target,setTarget]=useState('abs'); const [category,setCategory]=useState('strength'); const [equipment,setEquipment]=useState('body weight'); const [location,setLocation]=useState('Home'); const [videoUrl,setVideoUrl]=useState('');
@@ -590,7 +660,7 @@ function ManualExercise({exercises,setExercises}:{exercises:Exercise[];setExerci
 }
 
 function Importer({setExercises,reloadSupabase,exercises}:{setExercises:(e:Exercise[])=>void; reloadSupabase:()=>void; exercises:Exercise[]}) {
-  const [loaded,setLoaded]=useState(false); const [status,setStatus]=useState('Ready to load the bundled V2.2.7 catalogue.'); const [busy,setBusy]=useState(false); const [missingOpen,setMissingOpen]=useState(false);
+  const [loaded,setLoaded]=useState(false); const [status,setStatus]=useState('Ready to load the bundled V2.2.8 catalogue.'); const [busy,setBusy]=useState(false); const [missingOpen,setMissingOpen]=useState(false);
   const missing = localCatalogue.filter(e=>!e.video_path && !e.video_url).slice(0,50);
   const prepared = useMemo(()=>localCatalogue.map(e=>({...e, video_url: e.video_url || buildVideoUrl(e.video_path), has_video: !!(e.video_url || e.video_path)})),[]);
   async function importLocal(){ setExercises(prepared); setStatus(`Loaded ${prepared.length} exercises into app data.`); }
