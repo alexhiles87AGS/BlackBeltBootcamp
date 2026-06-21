@@ -30,7 +30,7 @@ const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[] 
   { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'] },
 ];
 
-const APP_VERSION = '2.2.3-trainer-assignment';
+const APP_VERSION = '2.2.5-mobile-calendar-fma-badges';
 
 const cleanProfiles: AthleteProfile[] = [
   {
@@ -69,12 +69,12 @@ const starter: Exercise[] = [
 ];
 
 const initialBadges: Badge[] = [
-  { id:'b1', name:'First Workout', icon:'🏁', description:'Complete the first logged workout.', unlocked:true, progress:100 },
-  { id:'b2', name:'7 Day Streak', icon:'🔥', description:'Train seven days in a row.', unlocked:false, progress:57 },
-  { id:'b3', name:'Footwork Focus', icon:'⚡', description:'Complete 30 footwork sessions.', unlocked:false, progress:36 },
-  { id:'b4', name:'FMA Regular', icon:'🥋', description:'Attend 25 FMA classes.', unlocked:false, progress:44 },
-  { id:'b5', name:'Strength Builder', icon:'💪', description:'Log 50 strength exercises.', unlocked:false, progress:62 },
-  { id:'b6', name:'Fight Camp Ready', icon:'🏆', description:'Complete a full programme block.', unlocked:false, progress:18 },
+  { id:'b1', name:'First Workout', icon:'🏁', description:'Complete the first logged workout.', unlocked:false, progress:0 },
+  { id:'b2', name:'7 Day Streak', icon:'🔥', description:'Train seven days in a row.', unlocked:false, progress:0 },
+  { id:'b3', name:'Footwork Focus', icon:'⚡', description:'Complete 30 footwork sessions.', unlocked:false, progress:0 },
+  { id:'b4', name:'FMA Regular', icon:'🥋', description:'Attend 25 FMA classes.', unlocked:false, progress:0 },
+  { id:'b5', name:'Strength Builder', icon:'💪', description:'Log 50 strength or gym exercises.', unlocked:false, progress:0 },
+  { id:'b6', name:'Fight Camp Ready', icon:'🏆', description:'Complete 20 planned training sessions.', unlocked:false, progress:0 },
 ];
 
 const fmaClasses = [
@@ -157,7 +157,7 @@ function App() {
       const athlete = athletes.find(a => a.id === currentUser.athlete_id);
       if (athlete) setProfile(athlete);
     }
-  }, [currentUser?.id]);
+  }, [currentUser?.id, currentUser?.athlete_id, athletes.length]);
 
   useEffect(() => { if (currentUser) loadFromSupabase(); }, [currentUser?.id]);
 
@@ -168,9 +168,13 @@ function App() {
   }
 
   const visibleEvents = useMemo(() => {
-    if (!currentUser || currentUser.role !== 'athlete') return events;
-    return events.filter(e => !e.athlete_id || e.athlete_id === profile.id);
-  }, [events, currentUser?.id, profile.id]);
+    if (!currentUser) return [];
+    if (currentUser.athlete_id) {
+      return events.filter(e => !e.athlete_id || e.athlete_id === currentUser.athlete_id);
+    }
+    return events;
+  }, [events, currentUser?.id, currentUser?.athlete_id]);
+  const liveBadges = useMemo(() => buildBadges(logs, visibleEvents), [logs, visibleEvents]);
 
   function handleLogout(){ setCurrentUser(null); setDrawerOpen(false); }
   function go(p: Page){ setPage(p); setDrawerOpen(false); window.scrollTo({top:0, behavior:'smooth'}); }
@@ -184,13 +188,13 @@ function App() {
   return <div className="appShell">
     <header className="topbar">
       <button className="iconButton" onClick={()=>setDrawerOpen(true)} aria-label="Open menu"><Menu size={24}/></button>
-      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.3</span></div></div>
+      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.5</span></div></div>
       <div className="topContext"><span>{currentUser.name}</span><em>{titleCase(currentUser.role)}</em></div>
     </header>
 
     {drawerOpen && <div className="drawerBackdrop" onClick={()=>setDrawerOpen(false)} />}
     <aside className={`drawer ${drawerOpen ? 'open' : ''}`}>
-      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.3</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
+      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.5</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
       <div className="drawerUser"><b>{currentUser.name}</b><span>{currentUser.email}</span><em>{titleCase(currentUser.role)} profile</em></div>
       <nav>{visibleNav.map(n => <button key={n.page} onClick={() => go(n.page)} className={page===n.page?'active':''}>{n.icon}<span>{n.label}</span></button>)}</nav>
       <button className="logoutButton" onClick={handleLogout}><LogOut size={18}/> Sign out</button>
@@ -198,7 +202,7 @@ function App() {
 
     <main className="pageFrame">
       <section className="pageHeader"><span className="muted">{profile.name} · {profile.gym}</span><h2>{activeTitle}</h2></section>
-      {page==='dashboard' && <Dashboard logs={logs} events={visibleEvents} badges={initialBadges} profile={profile} setPage={go} openSession={openSession}/>} 
+      {page==='dashboard' && <Dashboard logs={logs} events={visibleEvents} badges={liveBadges} profile={profile} setPage={go} openSession={openSession}/>} 
       {page==='library' && <ExerciseLibrary exercises={exercises} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} />}
       {page==='import' && <Importer setExercises={setExercises} reloadSupabase={loadFromSupabase} exercises={exercises} />}
       {page==='builder' && <WorkoutBuilder exercises={exercises} plans={plans} setPlans={setPlans} />}
@@ -207,7 +211,7 @@ function App() {
       {page==='session' && <SessionWorkout session={activeSession} setSession={setActiveSession} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})}/>} 
       {page==='fma' && <FmaClasses events={events} setEvents={setEvents} openSession={openSession}/>} 
       {page==='stats' && <Stats logs={logs} events={visibleEvents} profile={profile}/>} 
-      {page==='badges' && <Badges badges={initialBadges}/>} 
+      {page==='badges' && <Badges badges={liveBadges}/>} 
       {page==='profile' && <Profile profile={profile} setProfile={(p)=>{setProfile(p); setAthletes(athletes.map(a=>a.id===p.id?p:a));}}/>} 
       {page==='admin' && <Admin profile={profile} events={events} setEvents={setEvents} plans={plans} exercises={exercises} setExercises={setExercises} users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/>} 
     </main>
@@ -393,9 +397,22 @@ function WorkoutBuilder({exercises,plans,setPlans}:{exercises:Exercise[];plans:W
 }
 
 function FmaClasses({events,setEvents,openSession}:{events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;openSession:(e:CalendarEvent)=>void}){
-  const [selected,setSelected]=useState(fmaClasses[0]); const [date,setDate]=useState(todayISO()); const [time,setTime]=useState('19:00');
+  const [classOptions,setClassOptions]=useState(() => storage('bbb_fma_classes', fmaClasses));
+  const [selectedName,setSelectedName]=useState(classOptions[0]?.name || 'Advanced MMA');
+  const selected = classOptions.find(c=>c.name===selectedName) || classOptions[0] || fmaClasses[0];
+  const [date,setDate]=useState(todayISO()); const [time,setTime]=useState('19:00');
+  const [newClassName,setNewClassName]=useState(''); const [newClassFocus,setNewClassFocus]=useState('');
+  useEffect(()=>{ setStorage('bbb_fma_classes', classOptions); }, [classOptions]);
   function add(){ const event={id:crypto.randomUUID(),date,time,title:`FMA ${selected.name}`,type:'FMA' as SessionType,status:'planned' as const,class_name:selected.name}; setEvents([...events,event]); }
-  return <div className="fmaLayout"><section className="panel"><h3>FMA Chester Classes</h3><p className="muted">Select a class, choose a date and time, then add it to James’s calendar as a class session. Class sessions track attendance only — no sets, reps or exercise log required.</p><div className="classList">{fmaClasses.map(c=><button className={selected.name===c.name?'selected':''} onClick={()=>setSelected(c)} key={c.name}><b>{c.name}</b><span>{c.focus}</span></button>)}</div></section><section className="panel fmaSchedulePanel"><h3>Add {selected.name}</h3><p>{selected.focus}</p><div className="formGrid two"><label>Class Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Class Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary big" onClick={add}><CalendarDays size={18}/>Add class to calendar</button></div><h3>Upcoming FMA Sessions</h3>{events.filter(e=>e.type==='FMA').map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}</section></div>
+  function addClassType(){
+    const name = newClassName.trim();
+    const focus = newClassFocus.trim() || 'Class session.';
+    if(!name) return;
+    const newClass = { name, type:'FMA' as SessionType, focus };
+    const updated = [...classOptions.filter(c=>c.name.toLowerCase()!==name.toLowerCase()), newClass];
+    setClassOptions(updated); setSelectedName(name); setNewClassName(''); setNewClassFocus('');
+  }
+  return <div className="fmaLayout"><section className="panel"><h3>FMA Chester Classes</h3><p className="muted">Select a class, choose a date and time, then add it to James’s calendar as a class session. Class sessions track attendance only — no sets, reps or exercise log required.</p><div className="classList">{classOptions.map(c=><button className={selected?.name===c.name?'selected':''} onClick={()=>setSelectedName(c.name)} key={c.name}><b>{c.name}</b><span>{c.focus}</span></button>)}</div><div className="panel inner newClassPanel"><h3>Add New Class Type</h3><p className="muted">Create additional class types for the FMA list. These are still class sessions and do not require sets, reps or exercise logs.</p><div className="formGrid two"><label>Class Name<input value={newClassName} onChange={e=>setNewClassName(e.target.value)} placeholder="e.g. Wrestling"/></label><label>Class Description<input value={newClassFocus} onChange={e=>setNewClassFocus(e.target.value)} placeholder="Short class focus"/></label></div><div className="formActions"><button onClick={addClassType} disabled={!newClassName.trim()}><Plus size={16}/>Add class type</button></div></div></section><section className="panel fmaSchedulePanel"><h3>Add {selected.name}</h3><p>{selected.focus}</p><div className="formGrid two"><label>Class Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Class Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary big" onClick={add}><CalendarDays size={18}/>Add class to calendar</button></div><h3>Upcoming FMA Sessions</h3>{events.filter(e=>e.type==='FMA').map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}</section></div>
 }
 
 function Stats({logs,events,profile}:{logs:WorkoutLog[];events:CalendarEvent[];profile:AthleteProfile}){
@@ -409,8 +426,31 @@ function Stats({logs,events,profile}:{logs:WorkoutLog[];events:CalendarEvent[];p
   return <div><div className="kpiRow statsKpis"><Kpi label="Exercises Completed" value={exercisesCompleted}/><Kpi label="Sessions Completed" value={sessionsCompleted}/><Kpi label="Workout Streak" value={`${streak} days`}/><Kpi label="Current Weight" value={`${profile.weight_kg || '—'} kg`}/></div><section className="panel"><h3>This Week By Session Type</h3>{typeCounts.length===0 ? <p className="muted">No completed sessions this week yet.</p> : <div className="typeCountGrid">{typeCounts.map(x=><div className="typeCount" key={x.type}><span className={classNameForType(x.type)}>{x.type}</span><b>{x.count}</b></div>)}</div>}</section><section className="panel"><h3>Weekly Output</h3><div className="chart"><ResponsiveContainer width="100%" height={260}><BarChart data={chart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="day"/><YAxis/><Tooltip/><Bar dataKey="sessions"/><Bar dataKey="exercises"/></BarChart></ResponsiveContainer></div></section></div>
 }
 function calcStreak(logs:WorkoutLog[], events:CalendarEvent[]){ const doneDates=new Set([...logs.filter(l=>l.completed).map(l=>l.date), ...events.filter(e=>e.status==='completed').map(e=>e.date)]); let streak=0; for(let i=0;i<365;i++){ const d=iso(addDays(new Date(), -i)); if(doneDates.has(d)) streak++; else if(i>0) break; } return streak; }
+function percent(count:number,target:number){ return Math.min(100, Math.round((count / Math.max(target,1)) * 100)); }
+function buildBadges(logs:WorkoutLog[], events:CalendarEvent[]): Badge[] {
+  const completedSessions = events.filter(e=>e.status==='completed');
+  const completedLogs = logs.filter(l=>l.completed);
+  const streak = calcStreak(logs, events);
+  const footwork = [...completedSessions.map(e=>e.title), ...completedLogs.map(l=>l.exercise_name)].filter(v=>/footwork/i.test(v)).length;
+  const fma = completedSessions.filter(e=>e.type==='FMA' || !!e.class_name).length;
+  const strength = completedLogs.filter(l=>['Gym','Strength'].includes(l.session_type || '')).length;
+  const planned = completedSessions.filter(e=>!!e.workout_plan_id).length;
+  const counts: Record<string,{count:number;target:number}> = {
+    b1: { count: completedSessions.length + completedLogs.length, target: 1 },
+    b2: { count: streak, target: 7 },
+    b3: { count: footwork, target: 30 },
+    b4: { count: fma, target: 25 },
+    b5: { count: strength, target: 50 },
+    b6: { count: planned, target: 20 },
+  };
+  return initialBadges.map(b => {
+    const data = counts[b.id] || { count:0, target:1 };
+    const progress = percent(data.count, data.target);
+    return { ...b, progress, unlocked: data.count >= data.target };
+  });
+}
 
-function Badges({badges}:{badges:Badge[]}){ return <section className="panel"><h3>Achievements</h3><div className="badgeGrid">{badges.map(b=><div className={`badgeCard ${b.unlocked?'unlocked':''}`} key={b.id}><span>{b.icon}</span><h3>{b.name}</h3><p>{b.description}</p><div className="progress"><i style={{width:`${b.progress}%`}}/></div></div>)}</div></section> }
+function Badges({badges}:{badges:Badge[]}){ return <section className="panel"><h3>Achievements</h3><p className="muted">All counters start from zero and update from completed sessions, class attendance and exercise logs.</p><div className="badgeGrid">{badges.map(b=><div className={`badgeCard ${b.unlocked?'unlocked':''}`} key={b.id}><span>{b.icon}</span><h3>{b.name}</h3><p>{b.description}</p><div className="progress"><i style={{width:`${b.progress}%`}}/></div><em>{b.progress}% complete</em></div>)}</div></section> }
 function Profile({profile,setProfile}:{profile:AthleteProfile;setProfile:(p:AthleteProfile)=>void}){ function upd(k:keyof AthleteProfile,v:any){ setProfile({...profile,[k]:v}); } return <section className="panel profilePage"><h3>Athlete Profile</h3><p className="muted">These details help personalise targets, BMI, competition planning and progress tracking.</p><div className="grid three"><Field label="Athlete Name" help="Shown throughout the app." value={profile.name} onChange={v=>upd('name',v)}/><Field label="Age" help="Current age in years." value={profile.age||''} type="number" onChange={v=>upd('age',Number(v))}/><Field label="Gym / Academy" help="Primary training location." value={profile.gym||''} onChange={v=>upd('gym',v)}/><Field label="Height (cm)" help="Used to calculate BMI." value={profile.height_cm||''} type="number" onChange={v=>upd('height_cm',Number(v))}/><Field label="Weight (kg)" help="Current body weight." value={profile.weight_kg||''} type="number" onChange={v=>upd('weight_kg',Number(v))}/><Field label="Competition Weight (kg)" help="Target fight or competition weight." value={profile.competition_weight_kg||''} type="number" onChange={v=>upd('competition_weight_kg',Number(v))}/><Field label="Belt Rank" help="Current martial arts rank." value={profile.belt_rank||''} onChange={v=>upd('belt_rank',v)}/><Field label="Profile Photo URL" help="Optional image link for later use." value={profile.profile_photo_url||''} onChange={v=>upd('profile_photo_url',v)}/><div className="profileStat"><span>BMI</span><b>{bmi(profile)||'—'}</b><em>Calculated from height and weight.</em></div></div><label className="fullLabel">Athlete Goal<span>Main training objective.</span><textarea value={profile.goal||''} onChange={e=>upd('goal',e.target.value)}/></label></section> }
 function Field({label,help,value,onChange,type='text'}:{label:string;help:string;value:any;type?:string;onChange:(v:string)=>void}){ return <label className="fieldLabel">{label}<span>{help}</span><input type={type} value={value} onChange={e=>onChange(e.target.value)}/></label> }
 
@@ -442,9 +482,9 @@ function WorkoutAssignment({plans,athletes,events,setEvents}:{plans:WorkoutPlan[
       status: 'planned',
     };
     setEvents([event,...events]);
-    setStatus(`${plan.name} assigned to ${athlete.name} for ${date} at ${time}.`);
+    setStatus(`${plan.name} has been pushed to ${athlete.name}. It will appear in their Training Calendar on ${date} at ${time}.`);
   }
-  return <section className="panel"><h3>Assign Workout To Athlete</h3><p className="muted">Create workouts in the Workout Builder, then push the saved workout to an athlete calendar. The athlete sees it in their own calendar and can complete it from the session page.</p>{plans.length===0 ? <p className="status">No saved workouts yet. Create and save a workout in the Workout Builder first.</p> : <><div className="grid two"><label>Saved Workout<select value={planId} onChange={e=>setPlanId(e.target.value)}>{plans.map(p=><option key={p.id} value={p.id}>{p.name} · {p.exercises.length} exercises</option>)}</select></label><label>Assign To Athlete<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Session Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary" onClick={assign}><CalendarDays size={16}/>Push workout to athlete</button></div></>}{status && <div className="status">{status}</div>}<div className="assignmentList"><h4>Recently Assigned</h4>{events.filter(e=>e.workout_plan_id).slice(0,5).map(e=><div className="preview" key={e.id}><b>{e.title}</b><span>{e.date} · {e.time || 'Time TBC'}</span><em>{athletes.find(a=>a.id===e.athlete_id)?.name || 'Athlete not assigned'}</em></div>)}</div></section>
+  return <section className="panel"><h3>Assign Workout To Athlete</h3><p className="muted">Create workouts in the Workout Builder, then push the saved workout to a selected athlete. The session is attached to the athlete profile selected below, not the trainer profile.</p>{plans.length===0 ? <p className="status">No saved workouts yet. Create and save a workout in the Workout Builder first.</p> : <><div className="grid two"><label>Saved Workout<select value={planId} onChange={e=>setPlanId(e.target.value)}>{plans.map(p=><option key={p.id} value={p.id}>{p.name} · {p.exercises.length} exercises</option>)}</select></label><label>Assign To Athlete<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Session Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary" onClick={assign}><CalendarDays size={16}/>Push workout to athlete</button></div></>}{status && <div className="status">{status}</div>}<div className="assignmentList"><h4>Recently Assigned To Athletes</h4>{events.filter(e=>e.workout_plan_id && e.athlete_id).slice(0,5).map(e=><div className="preview" key={e.id}><b>{e.title}</b><span>{e.date} · {e.time || 'Time TBC'}</span><em>{athletes.find(a=>a.id===e.athlete_id)?.name || 'Athlete not assigned'}</em></div>)}</div></section>
 }
 
 function AthleteCreator({users,setUsers,athletes,setAthletes}:{users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){

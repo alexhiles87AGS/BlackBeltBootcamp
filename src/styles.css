@@ -34,3 +34,15 @@ html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}body{overflow-x:hidden
 }
 
 @media(max-width:370px){.kpiRow{grid-template-columns:1fr}.dashboardKpis .kpi,.statsKpis .kpi{min-height:auto}}
+
+/* V2.2.5 final mobile calendar / FMA / badge counter polish */
+input[type="date"],input[type="time"]{max-width:100%;min-width:0;-webkit-appearance:none;appearance:none;line-height:1.25}
+.formGrid,.calendarForm,.fmaSchedulePanel .formGrid,.newClassPanel .formGrid{width:100%;min-width:0;overflow:hidden}.formGrid label,.calendarForm label,.fmaSchedulePanel label,.newClassPanel label{min-width:0}.formActions{width:100%}.formActions button{max-width:100%;white-space:normal}
+.classList button{width:100%;justify-items:start;align-items:start;text-align:left;padding:16px;line-height:1.25}.classList button b,.classList button span{display:block;width:100%;text-align:left}.classList button span{margin-top:6px}.newClassPanel{margin-top:18px;margin-bottom:0}
+.badgeCard em{display:block;color:var(--muted);font-style:normal;font-size:.84rem;margin-top:10px}
+
+@media(max-width:720px){
+  .calendarPage{display:grid;gap:16px;width:100%;overflow:hidden}.calendarWeeks{gap:20px}.weekGrid{display:grid;grid-template-columns:1fr;gap:10px;overflow:visible;padding-bottom:0;scroll-snap-type:none}.dayColumn{width:100%;min-width:0;scroll-snap-align:unset;padding:14px;border-radius:18px}.dayColumn h4{font-size:1rem;margin-bottom:8px}.calendarSession{width:100%;min-height:auto;margin-bottom:8px}.calendarSession span,.calendarSession b,.calendarSession em{display:block;overflow-wrap:anywhere}.emptyDay{min-height:44px;display:flex;align-items:center}.calendarForm,.fmaSchedulePanel .formGrid,.newClassPanel .formGrid{grid-template-columns:1fr!important;gap:12px}.addSessionPanel,.fmaSchedulePanel,.newClassPanel{width:100%;overflow:hidden}.addSessionPanel input,.addSessionPanel select,.fmaSchedulePanel input,.fmaSchedulePanel select,.newClassPanel input{height:52px;width:100%;font-size:16px}.fmaSchedulePanel h3,.addSessionPanel h3{line-height:1.2}.classList button{min-height:auto;padding:15px;border-radius:18px}.classList button b{font-size:1rem}.classList button span{font-size:.92rem;line-height:1.3}.badgeGrid{grid-template-columns:1fr}.typeCountGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media(max-width:390px){.typeCountGrid{grid-template-columns:1fr}.formActions button{width:100%}}
