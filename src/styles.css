@@ -51,3 +51,7 @@ input[type="date"],input[type="time"]{max-width:100%;min-width:0;-webkit-appeara
 /* V2.2.7 admin diary and final FMA alignment polish */
 .adminDiaryPanel .diaryHeader{align-items:flex-start}.adminDiaryPanel .diaryHeader label{min-width:220px}.diaryList{display:grid;gap:8px}.diaryItem{border-color:#28506f}.diaryKpis{margin-top:16px}.classList button{justify-content:flex-start;justify-items:start;align-items:flex-start;text-align:left}.classList button b,.classList button span{justify-self:start;text-align:left;margin-left:0}.classList button span{max-width:100%}
 @media(max-width:720px){.adminDiaryPanel .diaryHeader{display:grid;grid-template-columns:1fr;gap:12px}.adminDiaryPanel .diaryHeader label{min-width:0;width:100%}.adminDiaryPanel .diaryHeader select{height:52px}.diaryKpis{grid-template-columns:repeat(2,minmax(0,1fr))}.classList button{place-items:start stretch}.classList button b,.classList button span{text-align:left;justify-self:start;width:100%}}
+
+/* V2.2.9 workout assignment sync and editable saved workouts */
+.miniGrid{display:grid;grid-template-columns:80px 1fr 1fr;gap:8px;margin-top:8px}.miniGrid label{font-size:.78rem;gap:4px}.miniGrid input{padding:9px 10px;border-radius:10px}.editableExercise{gap:8px}.savedWorkout .actions{margin-top:8px}.scheduleSelf{margin:12px 0 16px}.assignmentList .preview em{color:#b7d2eb}
+@media(max-width:720px){.miniGrid{grid-template-columns:1fr}.savedWorkout .actions{display:grid;grid-template-columns:1fr;gap:8px}.savedWorkout .actions button{width:100%}}

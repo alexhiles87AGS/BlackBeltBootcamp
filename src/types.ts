@@ -66,6 +66,7 @@ export type WorkoutPlan = {
   session_type?: SessionType;
   location?: string;
   exercises: ProgrammeExercise[];
+  remote_id?: string;
 };
 
 export type SessionType = 'Home' | 'Gym' | 'FMA' | 'MMA' | 'BJJ' | 'Boxing' | 'Kickboxing' | 'Cardio' | 'Mobility' | 'Physio' | 'Recovery' | 'Strength';
@@ -84,6 +85,8 @@ export type CalendarEvent = {
   athlete_name?: string;
   assigned_by_user_id?: string;
   class_name?: string;
+  remote_id?: string;
+  remote_plan_id?: string;
 };
 
 export type ExerciseLogSet = {

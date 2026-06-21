@@ -1,18 +1,21 @@
-# Production Readiness Audit — V2.2.8
+# Production Readiness Audit — V2.2.9
 
-This is a focused corrective patch, not a broad redesign.
+## Status
 
-## Verified in this patch
+Build tested successfully with `npm run build`.
 
-- Build completes using Vite.
-- Active built-in profiles are Alex Hiles and James Hiles only.
-- Inactive `james@blackbeltbootcamp.app` profile is removed/merged on upgrade.
-- Trainer assignment now writes canonical athlete identifiers: `athlete_id`, `athlete_email`, and `athlete_name`.
-- Existing James-targeted assignments are normalised to the active James profile where possible.
-- Today's Training no longer includes Quick Exercise Completion.
+## Fixed in this patch
 
-## Still recommended before wider release
+- Workout assignment target mismatch.
+- Duplicate/local profile confusion by continuing canonical Alex and James profiles.
+- Admin assignment pick list now includes both Alex Hiles and James Hiles.
+- Athlete self-scheduling from Workout Builder.
+- Saved workout viewing and editing.
+- Supabase sync for training sessions and programme assignments where the existing V2.2 schema is present.
+- Quick Exercise Completion remains removed from Today's Training.
 
-- Move the local fallback user system fully into Supabase Auth and profiles.
-- Add role-based RLS for trainer/athlete separation.
-- Persist workouts, schedules and logs to Supabase rather than local storage.
+## Remaining future hardening
+
+- Replace local fallback login with full Supabase Auth-only login.
+- Tighten RLS policies before wider public use.
+- Add automated tests for assignment and calendar visibility.

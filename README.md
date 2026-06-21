@@ -1,36 +1,38 @@
-# BlackBeltBootcamp V2.2.8 — Assignment/Profile/Today Fix
+# BlackBeltBootcamp V2.2.9 — Workout Assignment Sync
 
-Focused patch applied on top of the latest V2.2.7 build.
+Focused patch built on top of V2.2.8.
 
-## Included
+## What changed
 
-- Removes the inactive `james@blackbeltbootcamp.app` demo/local profile from the app state on upgrade.
-- Keeps the active James login as `james.hiles@blackbeltbootcamp.app`.
-- Normalises any older duplicate James athlete records into one canonical `James Hiles` athlete profile.
-- Repairs older assigned calendar events so James-targeted sessions point to the canonical James athlete profile.
-- Strengthens the trainer-to-athlete assignment workflow so pushed workouts are immediately saved against the selected athlete ID, email and name.
-- Admin Console athlete pick lists now show a single James profile.
-- Removes the Quick Exercise Completion section from Today's Training.
-- Retains the mobile calendar, FMA class session behaviour, exercise library, workout builder and admin diary features.
+- Fixed the trainer-to-athlete assignment workflow so assigned workouts are saved against the selected profile using `athlete_id`, `athlete_email` and `athlete_name`.
+- Added Supabase sync for assigned sessions and workout programmes when Supabase tables are available.
+- Kept localStorage fallback so the app still works if Supabase training tables are not available.
+- James can now create a workout in Workout Builder and add it to his own calendar.
+- Alex can now assign workouts to his own profile from the Admin Console.
+- The Admin Console profile pick list now includes Alex Hiles and James Hiles.
+- Saved workouts can now be viewed, edited, updated and deleted in Workout Builder.
+- Saved workout exercises now allow planned sets, reps and weight to be edited.
+- The Quick Exercise Completion section remains removed from Today's Training.
 
-## Active local fallback logins
+## Deployment
 
-Admin:
-- Email: `alex.hiles.ags@gmail.com`
-- Password: `BlackBeltAdmin!2026`
-
-Athlete:
-- Email: `james.hiles@blackbeltbootcamp.app`
-- Password: `JamesTraining!2026`
-
-## Deploy
+Install over the existing project folder, then run:
 
 ```bash
 npm install
 npm run build
 git add .
-git commit -m "Fix James profile assignment and remove quick completion"
+git commit -m "Fix workout assignment sync and editable workouts"
 git push
 ```
 
-No Supabase SQL is required for this patch.
+## Supabase note
+
+No new SQL is required if the V2.2 schema has already been run. The patch uses the existing V2.2 tables:
+
+- `athlete_profiles`
+- `workout_programmes`
+- `workout_programme_exercises`
+- `training_sessions`
+
+If those tables do not exist, the app falls back to local device storage.
