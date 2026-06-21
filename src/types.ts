@@ -80,6 +80,9 @@ export type CalendarEvent = {
   status: 'planned' | 'completed' | 'missed';
   workout_plan_id?: string;
   athlete_id?: string;
+  athlete_email?: string;
+  athlete_name?: string;
+  assigned_by_user_id?: string;
   class_name?: string;
 };
 

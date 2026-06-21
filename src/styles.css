@@ -46,3 +46,8 @@ input[type="date"],input[type="time"]{max-width:100%;min-width:0;-webkit-appeara
 }
 
 @media(max-width:390px){.typeCountGrid{grid-template-columns:1fr}.formActions button{width:100%}}
+
+
+/* V2.2.7 admin diary and final FMA alignment polish */
+.adminDiaryPanel .diaryHeader{align-items:flex-start}.adminDiaryPanel .diaryHeader label{min-width:220px}.diaryList{display:grid;gap:8px}.diaryItem{border-color:#28506f}.diaryKpis{margin-top:16px}.classList button{justify-content:flex-start;justify-items:start;align-items:flex-start;text-align:left}.classList button b,.classList button span{justify-self:start;text-align:left;margin-left:0}.classList button span{max-width:100%}
+@media(max-width:720px){.adminDiaryPanel .diaryHeader{display:grid;grid-template-columns:1fr;gap:12px}.adminDiaryPanel .diaryHeader label{min-width:0;width:100%}.adminDiaryPanel .diaryHeader select{height:52px}.diaryKpis{grid-template-columns:repeat(2,minmax(0,1fr))}.classList button{place-items:start stretch}.classList button b,.classList button span{text-align:left;justify-self:start;width:100%}}

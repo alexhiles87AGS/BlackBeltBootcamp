@@ -30,7 +30,7 @@ const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[] 
   { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'] },
 ];
 
-const APP_VERSION = '2.2.5-mobile-calendar-fma-badges';
+const APP_VERSION = '2.2.7-admin-diary-fresh-calendar';
 
 const cleanProfiles: AthleteProfile[] = [
   {
@@ -99,6 +99,70 @@ function bodyOf(e: Exercise){ return e.body_part || e.body_parts || 'general'; }
 function safeVideo(e: Exercise){ return e.video_url || buildVideoUrl(e.video_path); }
 function bmi(profile: AthleteProfile){ if(!profile.height_cm || !profile.weight_kg) return ''; const m = profile.height_cm/100; return (profile.weight_kg/(m*m)).toFixed(1); }
 function classNameForType(type?: string){ return `typeBadge type-${(type||'general').toLowerCase().replace(/\s+/g,'-')}`; }
+function normalise(v?: string | null){ return (v || '').trim().toLowerCase(); }
+function findLinkedAthleteUser(profile: AthleteProfile, users: AppUser[]){
+  const email = normalise(profile.email);
+  const name = normalise(profile.name);
+  return users.find(u => u.role === 'athlete' && (
+    (profile.id && u.athlete_id === profile.id) ||
+    (!!email && normalise(u.email) === email) ||
+    (!!name && normalise(u.name) === name)
+  ));
+}
+function resolveAssignmentProfile(profile: AthleteProfile, users: AppUser[], athletes: AthleteProfile[]){
+  const linkedUser = findLinkedAthleteUser(profile, users);
+  const canonicalId = linkedUser?.athlete_id || profile.id;
+  const canonicalProfile = athletes.find(a => a.id === canonicalId) || profile;
+  return {
+    id: canonicalId,
+    name: canonicalProfile.name || linkedUser?.name || profile.name,
+    email: canonicalProfile.email || linkedUser?.email || profile.email || '',
+  };
+}
+function repairAssignedEvents(events: CalendarEvent[], athletes: AthleteProfile[], users: AppUser[]){
+  let changed = false;
+  const repaired = events.map(event => {
+    if (!event.athlete_id) return event;
+    const currentProfile = athletes.find(a => a.id === event.athlete_id);
+    if (!currentProfile) return event;
+    const resolved = resolveAssignmentProfile(currentProfile, users, athletes);
+    const next: CalendarEvent = {
+      ...event,
+      athlete_id: resolved.id,
+      athlete_email: event.athlete_email || resolved.email || undefined,
+      athlete_name: event.athlete_name || resolved.name || undefined,
+    };
+    if (next.athlete_id !== event.athlete_id || next.athlete_email !== event.athlete_email || next.athlete_name !== event.athlete_name) changed = true;
+    return next;
+  });
+  return changed ? repaired : events;
+}
+function isEventVisibleForUser(event: CalendarEvent, user: AppUser){
+  const eventEmail = normalise(event.athlete_email);
+  if (!event.athlete_id && !eventEmail) return true;
+  if (user.athlete_id && event.athlete_id === user.athlete_id) return true;
+  if (eventEmail && normalise(user.email) === eventEmail) return true;
+  return false;
+}
+function eventMatchesAthlete(event: CalendarEvent, athlete: AthleteProfile, users: AppUser[]){
+  const linkedUser = findLinkedAthleteUser(athlete, users);
+  const ids = new Set([athlete.id, linkedUser?.athlete_id].filter(Boolean));
+  const emails = new Set([normalise(athlete.email), normalise(linkedUser?.email)].filter(Boolean));
+  const names = new Set([normalise(athlete.name), normalise(linkedUser?.name)].filter(Boolean));
+  if (event.athlete_id && ids.has(event.athlete_id)) return true;
+  if (event.athlete_email && emails.has(normalise(event.athlete_email))) return true;
+  if (event.athlete_name && names.has(normalise(event.athlete_name))) return true;
+  return false;
+}
+function isJamesCalendarEvent(event: CalendarEvent){
+  const id = normalise(event.athlete_id);
+  const email = normalise(event.athlete_email);
+  const name = normalise(event.athlete_name);
+  // Older builds created unassigned sessions that appeared on James's diary.
+  // Treat those as James-visible legacy sessions and clear them for the final clean start.
+  if (!id && !email) return true;
+  return id === 'james-athlete' || email === 'james.hiles@blackbeltbootcamp.app' || name === 'james hiles';
+}
 function getInitialEvents(): CalendarEvent[] {
   const [mon,tue,wed,thu,fri,sat,sun] = weekDates().map(iso);
   return [
@@ -123,6 +187,12 @@ function migrateFinalState(){
     if (!localStorage.getItem('bbb_events')) localStorage.setItem('bbb_events', JSON.stringify([]));
     if (!localStorage.getItem('bbb_plans')) localStorage.setItem('bbb_plans', JSON.stringify([]));
     if (!localStorage.getItem('bbb_logs')) localStorage.setItem('bbb_logs', JSON.stringify([]));
+    if (localStorage.getItem('bbb_james_calendar_fresh_v227') !== 'done') {
+      const currentEvents = JSON.parse(localStorage.getItem('bbb_events') || '[]') as CalendarEvent[];
+      const cleanedEvents = currentEvents.filter(event => !isJamesCalendarEvent(event));
+      localStorage.setItem('bbb_events', JSON.stringify(cleanedEvents));
+      localStorage.setItem('bbb_james_calendar_fresh_v227', 'done');
+    }
     localStorage.setItem('bbb_app_version', APP_VERSION);
   } catch { /* local storage unavailable */ }
 }
@@ -159,6 +229,12 @@ function App() {
     }
   }, [currentUser?.id, currentUser?.athlete_id, athletes.length]);
 
+
+  useEffect(() => {
+    const repaired = repairAssignedEvents(events, athletes, users);
+    if (repaired !== events) setEvents(repaired);
+  }, [athletes.length, users.length]);
+
   useEffect(() => { if (currentUser) loadFromSupabase(); }, [currentUser?.id]);
 
   async function loadFromSupabase() {
@@ -169,11 +245,8 @@ function App() {
 
   const visibleEvents = useMemo(() => {
     if (!currentUser) return [];
-    if (currentUser.athlete_id) {
-      return events.filter(e => !e.athlete_id || e.athlete_id === currentUser.athlete_id);
-    }
-    return events;
-  }, [events, currentUser?.id, currentUser?.athlete_id]);
+    return events.filter(e => isEventVisibleForUser(e, currentUser));
+  }, [events, currentUser?.id, currentUser?.athlete_id, currentUser?.email]);
   const liveBadges = useMemo(() => buildBadges(logs, visibleEvents), [logs, visibleEvents]);
 
   function handleLogout(){ setCurrentUser(null); setDrawerOpen(false); }
@@ -188,13 +261,13 @@ function App() {
   return <div className="appShell">
     <header className="topbar">
       <button className="iconButton" onClick={()=>setDrawerOpen(true)} aria-label="Open menu"><Menu size={24}/></button>
-      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.5</span></div></div>
+      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.7</span></div></div>
       <div className="topContext"><span>{currentUser.name}</span><em>{titleCase(currentUser.role)}</em></div>
     </header>
 
     {drawerOpen && <div className="drawerBackdrop" onClick={()=>setDrawerOpen(false)} />}
     <aside className={`drawer ${drawerOpen ? 'open' : ''}`}>
-      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.5</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
+      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.7</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
       <div className="drawerUser"><b>{currentUser.name}</b><span>{currentUser.email}</span><em>{titleCase(currentUser.role)} profile</em></div>
       <nav>{visibleNav.map(n => <button key={n.page} onClick={() => go(n.page)} className={page===n.page?'active':''}>{n.icon}<span>{n.label}</span></button>)}</nav>
       <button className="logoutButton" onClick={handleLogout}><LogOut size={18}/> Sign out</button>
@@ -455,10 +528,23 @@ function Profile({profile,setProfile}:{profile:AthleteProfile;setProfile:(p:Athl
 function Field({label,help,value,onChange,type='text'}:{label:string;help:string;value:any;type?:string;onChange:(v:string)=>void}){ return <label className="fieldLabel">{label}<span>{help}</span><input type={type} value={value} onChange={e=>onChange(e.target.value)}/></label> }
 
 function Admin({profile,events,setEvents,plans,exercises,setExercises,users,setUsers,athletes,setAthletes}:{profile:AthleteProfile;events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;plans:WorkoutPlan[];exercises:Exercise[];setExercises:(e:Exercise[])=>void;users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){
-  return <div className="adminGrid"><section className="panel"><h3>Admin Console</h3><div className="grid three"><Kpi label="Athletes" value={athletes.length}/><Kpi label="Sessions Planned" value={events.length}/><Kpi label="Saved Programmes" value={plans.length}/></div></section><WorkoutAssignment plans={plans} athletes={athletes} events={events} setEvents={setEvents}/><AthleteCreator users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/><ManualExercise setExercises={setExercises} exercises={exercises}/></div>
+  return <div className="adminGrid"><section className="panel"><h3>Admin Console</h3><div className="grid three"><Kpi label="Athletes" value={athletes.length}/><Kpi label="Sessions Planned" value={events.length}/><Kpi label="Saved Programmes" value={plans.length}/></div></section><WorkoutAssignment plans={plans} athletes={athletes} users={users} events={events} setEvents={setEvents}/><AdminTrainingDiary events={events} athletes={athletes} users={users}/><AthleteCreator users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/><ManualExercise setExercises={setExercises} exercises={exercises}/></div>
 }
 
-function WorkoutAssignment({plans,athletes,events,setEvents}:{plans:WorkoutPlan[]; athletes:AthleteProfile[]; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void}){
+function AdminTrainingDiary({events,athletes,users}:{events:CalendarEvent[]; athletes:AthleteProfile[]; users:AppUser[]}){
+  const athleteOptions = athletes.filter(a=>a.role==='athlete');
+  const defaultAthlete = athleteOptions.find(a=>normalise(a.name)==='james hiles') || athleteOptions[0];
+  const [athleteId,setAthleteId] = useState(defaultAthlete?.id || '');
+  useEffect(()=>{ if(!athleteId && defaultAthlete) setAthleteId(defaultAthlete.id); }, [athleteOptions.length]);
+  const athlete = athleteOptions.find(a=>a.id===athleteId) || defaultAthlete;
+  const diary = athlete ? events.filter(e=>eventMatchesAthlete(e, athlete, users)).sort((a,b)=>`${a.date} ${a.time||''}`.localeCompare(`${b.date} ${b.time||''}`)) : [];
+  const completed = diary.filter(e=>e.status==='completed').length;
+  const planned = diary.filter(e=>e.status==='planned').length;
+  const classSessions = diary.filter(e=>e.type==='FMA' || !!e.class_name).length;
+  return <section className="panel adminDiaryPanel"><div className="row between diaryHeader"><div><h3>Athlete Training Diary</h3><p className="muted">View the selected athlete's calendar, assigned workouts and class sessions from the admin profile.</p></div><label>View Athlete<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label></div><div className="kpiRow diaryKpis"><Kpi label="Planned" value={planned}/><Kpi label="Completed" value={completed}/><Kpi label="Class Sessions" value={classSessions}/><Kpi label="Total Diary Items" value={diary.length}/></div>{diary.length===0 ? <p className="status">No sessions are currently assigned to {athlete?.name || 'this athlete'}. Their diary is clean and ready for new programmes.</p> : <div className="diaryList">{diary.map(e=><div className="preview diaryItem" key={e.id}><b>{e.title}</b><span>{e.date} · {e.time || 'Time TBC'} · {e.type}</span><em>{titleCase(e.status)}{e.workout_plan_id ? ' · Assigned workout' : e.class_name ? ` · ${e.class_name}` : ''}</em></div>)}</div>}</section>
+}
+
+function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:WorkoutPlan[]; athletes:AthleteProfile[]; users:AppUser[]; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void}){
   const athleteOptions = athletes.filter(a=>a.role==='athlete');
   const [planId,setPlanId]=useState(plans[0]?.id || '');
   const [athleteId,setAthleteId]=useState(athleteOptions[0]?.id || '');
@@ -471,9 +557,13 @@ function WorkoutAssignment({plans,athletes,events,setEvents}:{plans:WorkoutPlan[
     const plan = plans.find(p=>p.id===planId);
     const athlete = athleteOptions.find(a=>a.id===athleteId);
     if(!plan || !athlete){ setStatus('Create a saved programme and athlete before assigning.'); return; }
+    const assigned = resolveAssignmentProfile(athlete, users, athletes);
     const event: CalendarEvent = {
       id: crypto.randomUUID(),
-      athlete_id: athlete.id,
+      athlete_id: assigned.id,
+      athlete_email: assigned.email || undefined,
+      athlete_name: assigned.name || athlete.name,
+      assigned_by_user_id: 'admin-alex',
       workout_plan_id: plan.id,
       date,
       time,
@@ -482,9 +572,9 @@ function WorkoutAssignment({plans,athletes,events,setEvents}:{plans:WorkoutPlan[
       status: 'planned',
     };
     setEvents([event,...events]);
-    setStatus(`${plan.name} has been pushed to ${athlete.name}. It will appear in their Training Calendar on ${date} at ${time}.`);
+    setStatus(`${plan.name} has been pushed to ${assigned.name}. Log in as ${assigned.name} to see it in their Training Calendar on ${date} at ${time}.`);
   }
-  return <section className="panel"><h3>Assign Workout To Athlete</h3><p className="muted">Create workouts in the Workout Builder, then push the saved workout to a selected athlete. The session is attached to the athlete profile selected below, not the trainer profile.</p>{plans.length===0 ? <p className="status">No saved workouts yet. Create and save a workout in the Workout Builder first.</p> : <><div className="grid two"><label>Saved Workout<select value={planId} onChange={e=>setPlanId(e.target.value)}>{plans.map(p=><option key={p.id} value={p.id}>{p.name} · {p.exercises.length} exercises</option>)}</select></label><label>Assign To Athlete<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Session Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary" onClick={assign}><CalendarDays size={16}/>Push workout to athlete</button></div></>}{status && <div className="status">{status}</div>}<div className="assignmentList"><h4>Recently Assigned To Athletes</h4>{events.filter(e=>e.workout_plan_id && e.athlete_id).slice(0,5).map(e=><div className="preview" key={e.id}><b>{e.title}</b><span>{e.date} · {e.time || 'Time TBC'}</span><em>{athletes.find(a=>a.id===e.athlete_id)?.name || 'Athlete not assigned'}</em></div>)}</div></section>
+  return <section className="panel"><h3>Assign Workout To Athlete</h3><p className="muted">Create workouts in the Workout Builder, then push the saved workout to a selected athlete. The session is attached to the athlete profile selected below, not the trainer profile.</p>{plans.length===0 ? <p className="status">No saved workouts yet. Create and save a workout in the Workout Builder first.</p> : <><div className="grid two"><label>Saved Workout<select value={planId} onChange={e=>setPlanId(e.target.value)}>{plans.map(p=><option key={p.id} value={p.id}>{p.name} · {p.exercises.length} exercises</option>)}</select></label><label>Assign To Athlete<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Session Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary" onClick={assign}><CalendarDays size={16}/>Push workout to athlete</button></div></>}{status && <div className="status">{status}</div>}<div className="assignmentList"><h4>Recently Assigned To Athletes</h4>{events.filter(e=>e.workout_plan_id && e.athlete_id).slice(0,5).map(e=><div className="preview" key={e.id}><b>{e.title}</b><span>{e.date} · {e.time || 'Time TBC'}</span><em>{e.athlete_name || athletes.find(a=>a.id===e.athlete_id)?.name || 'Athlete not assigned'}</em></div>)}</div></section>
 }
 
 function AthleteCreator({users,setUsers,athletes,setAthletes}:{users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){
@@ -500,7 +590,7 @@ function ManualExercise({exercises,setExercises}:{exercises:Exercise[];setExerci
 }
 
 function Importer({setExercises,reloadSupabase,exercises}:{setExercises:(e:Exercise[])=>void; reloadSupabase:()=>void; exercises:Exercise[]}) {
-  const [loaded,setLoaded]=useState(false); const [status,setStatus]=useState('Ready to load the bundled V2.2.3 catalogue.'); const [busy,setBusy]=useState(false); const [missingOpen,setMissingOpen]=useState(false);
+  const [loaded,setLoaded]=useState(false); const [status,setStatus]=useState('Ready to load the bundled V2.2.7 catalogue.'); const [busy,setBusy]=useState(false); const [missingOpen,setMissingOpen]=useState(false);
   const missing = localCatalogue.filter(e=>!e.video_path && !e.video_url).slice(0,50);
   const prepared = useMemo(()=>localCatalogue.map(e=>({...e, video_url: e.video_url || buildVideoUrl(e.video_path), has_video: !!(e.video_url || e.video_path)})),[]);
   async function importLocal(){ setExercises(prepared); setStatus(`Loaded ${prepared.length} exercises into app data.`); }

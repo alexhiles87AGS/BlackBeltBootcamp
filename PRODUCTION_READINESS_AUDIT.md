@@ -1,24 +1,56 @@
-# Production Readiness Audit — V2.2.5
+# BlackBeltBootcamp V2.2 Production Readiness Audit
 
-Build tested successfully with `npm run build`.
+## Implemented
 
-## Scope of this patch
+- Netlify-ready Vite/React deployment.
+- Supabase exercise catalogue support.
+- Exercise videos stored in Supabase Storage and played in-app.
+- Login screen with persistent local session.
+- Demo athlete and admin profiles.
+- Auth-ready role structure: admin, coach, athlete.
+- Hamburger drawer navigation for a more app-like experience.
+- User-focused dashboard.
+- Weekly calendar and workout completion page.
+- Exercise logging with sets, reps, weight, and quick completion.
+- Exercise Library polish: title case, hidden IDs, cleaner cards, collapsible instructions.
+- Body-part-first workout builder.
+- FMA class scheduling flow.
+- Stats counters and weekly session type breakdown.
+- Profile helper labels.
+- Manual exercise creation.
+- Missing video manager.
+- Athlete creation area.
 
-This is a focused UI and behaviour patch only. It preserves the working V2.2.4 app structure and assignment filtering.
+## Remaining Before Commercial Release
 
-## Verified changes
+- Replace demo/local account creation with secure server-side Supabase Auth invitations.
+- Tighten RLS policies so only admins/coaches can create users/exercises/programmes.
+- Persist all workout/session/profile edits to Supabase, not only local private beta storage.
+- Add automated tests and route-based navigation.
+- Add mobile QA across iOS/Android browsers.
+- Add error monitoring and backup/export routines.
 
-- Calendar now stacks day cards on mobile instead of requiring horizontal scrolling.
-- Date and time inputs are constrained inside panels on iPhone/mobile widths.
-- FMA class list text alignment is fixed.
-- Manual FMA class type creation is available and stored locally.
-- Badge counters start from zero and update from app completion data.
+## Current Status
 
-## Not changed
+Private beta ready for James. Not yet hardened for broad public release.
 
-- Today’s Training.
-- Exercise Library.
-- Exercise video modal.
-- Workout completion flow.
-- Trainer-to-athlete assignment filtering.
-- Supabase schema.
+
+## V2.2.1 focused verification
+
+- Confirmed this package is based on the user-attached V2.2 app-like build.
+- Applied mobile/iPhone visual polish via CSS only where possible.
+- Updated FMA behaviour so class sessions do not generate individual exercise logs.
+- Preserved the existing V2.2 app-like structure and avoided broad rewrites.
+
+
+## V2.2.4 Check
+
+Added the final trainer-to-athlete assignment workflow on top of the V2.2.2 final polish build. This is implemented without changing the working exercise importer, exercise library, FMA class-session behaviour, Today's Training page, or existing UI structure.
+
+Production build verified with `npm run build`.
+
+
+## V2.2.7 Admin Diary + Fresh James Calendar
+- Clears legacy James-visible calendar sessions once on upgrade so James starts with a clean diary.
+- Adds an Admin Console athlete training diary so Alex can view James's assigned sessions and progress from the admin profile.
+- Tightens FMA class card text alignment.
