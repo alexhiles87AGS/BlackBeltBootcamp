@@ -1,25 +1,22 @@
-# BlackBeltBootcamp V2.2.12 Local Calendar Date Fix
+# V2.2.13 Production Readiness Audit
 
-This package builds on V2.2.11 and fixes the calendar date offset issue where sessions assigned on iPhone/UK time could appear one day later in the athlete diary. Calendar day matching now uses local YYYY-MM-DD dates rather than UTC conversion.
+## Status
 
-# Production Readiness Audit — V2.2.11
+Build passed with `npm run build`.
 
-## Build status
+## Fixes verified
 
-Production build completed successfully with `npm run build`.
+- Dates now use GMT-safe date-only handling.
+- Session dates are written to Supabase as GMT midday timestamps/date-compatible values.
+- Calendar view uses GMT/date-only comparison to avoid +1 day display shifts.
+- Local diary, saved workouts and logs are reset once for a clean programme start.
+- Remote historical sessions/workouts created before this patch are ignored by a clean-start cutoff.
+- Admin Console now includes deletion controls for diary events/classes and saved workouts.
 
-## Change scope
+## Notes
 
-This is a focused behavioural patch only. It does not alter the exercise library, FMA class session model, dashboard layout, or workout assignment structure from V2.2.10.
+Supabase deletion requires delete RLS policies. A helper SQL file is included:
 
-## Fixes added
+`supabase/schema_v2213_delete_policies.sql`
 
-1. Exercise cards collapse after the athlete saves an exercise log.
-2. Exercise cards also collapse when the athlete uses Mark Complete Only.
-3. Collapsed exercises show a saved confirmation and can be reopened.
-4. Mark Session Completed closes the workout session and returns the athlete to Dashboard.
-5. Session status update is attempted in Supabase for remotely assigned sessions.
-
-## Supabase
-
-No schema changes are required.
+Run this if delete actions do not remove remote Supabase rows.

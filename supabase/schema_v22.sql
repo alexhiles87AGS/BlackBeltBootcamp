@@ -210,8 +210,10 @@ begin
     execute format('drop policy if exists "Private beta read" on public.%I', r.tablename);
     execute format('drop policy if exists "Private beta insert" on public.%I', r.tablename);
     execute format('drop policy if exists "Private beta update" on public.%I', r.tablename);
+    execute format('drop policy if exists "Private beta delete" on public.%I', r.tablename);
     execute format('create policy "Private beta read" on public.%I for select using (true)', r.tablename);
     execute format('create policy "Private beta insert" on public.%I for insert with check (true)', r.tablename);
     execute format('create policy "Private beta update" on public.%I for update using (true) with check (true)', r.tablename);
+    execute format('create policy "Private beta delete" on public.%I for delete using (true)', r.tablename);
   end loop;
 end $$;

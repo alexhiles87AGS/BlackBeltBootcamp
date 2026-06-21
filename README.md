@@ -1,35 +1,44 @@
-# BlackBeltBootcamp V2.2.12 Local Calendar Date Fix
+# BlackBeltBootcamp V2.2.13 — GMT Calendar + Clean Start + Admin Deletion
 
-This package builds on V2.2.11 and fixes the calendar date offset issue where sessions assigned on iPhone/UK time could appear one day later in the athlete diary. Calendar day matching now uses local YYYY-MM-DD dates rather than UTC conversion.
+This package builds on the working V2.2.12 app and applies the final operational fixes requested.
 
-# BlackBeltBootcamp V2.2.11 — Completion Flow Fix
+## Included
 
-Focused patch built on top of V2.2.10 Remote Assignment + Calendar Fix.
+- GMT-safe date handling for assigned sessions and calendar display.
+- Supabase session dates are saved at midday GMT to avoid day-shift issues on iPhone/UK devices.
+- Training Calendar compares date-only values, not JavaScript local-time conversions.
+- One-time clean start for the live programme build:
+  - Clears existing local diary events.
+  - Clears existing local saved workouts.
+  - Clears existing local exercise logs.
+  - Attempts to clear old Supabase sessions/workouts.
+  - Ignores old remote sessions/workouts created before this patch cutoff.
+- Admin Console maintenance section.
+- Admin can delete all sessions and saved workouts.
+- Admin can delete individual diary items, including classes and workout sessions.
+- Admin can delete saved workouts.
+- Existing working features retained:
+  - Assignment to James.
+  - Assignment to Alex.
+  - James self-assignment.
+  - Exercise Library.
+  - FMA classes as class sessions only.
+  - Workout completion collapse behaviour.
 
-## Included changes
-
-- Keeps the V2.2.10 remote workout assignment and current/next week calendar fixes.
-- On the complete workout screen, saving an exercise log collapses that exercise card into a compact saved state.
-- Mark Complete Only also collapses that exercise card.
-- The saved exercise card can be reopened if the athlete needs to amend it before finishing the session.
-- When the athlete selects Mark Session Completed, the session is closed and the app returns to the Dashboard.
-- Session completion status is also pushed to Supabase when the session has a remote session ID.
-
-## Unchanged
-
-- Exercise Library remains unchanged.
-- Today’s Training layout remains unchanged apart from the linked completion flow behaviour.
-- FMA class-session behaviour remains unchanged.
-- Workout assignment/sync behaviour from V2.2.10 is retained.
-
-## Deployment
+## Deploy
 
 ```bash
 npm install
 npm run build
 git add .
-git commit -m "Polish workout completion flow"
+git commit -m "Fix GMT calendar dates and add admin deletion tools"
 git push
 ```
 
-No new Supabase SQL is required for this patch.
+## Optional Supabase SQL
+
+The app includes `supabase/schema_v2213_delete_policies.sql`.
+
+Run it once in Supabase SQL Editor if the Admin Console delete buttons do not remove remote rows.
+
+The full `supabase/schema_v22.sql` has also been updated to include delete policies for the private beta tables.

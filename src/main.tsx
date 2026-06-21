@@ -30,7 +30,7 @@ const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[] 
   { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'] },
 ];
 
-const APP_VERSION = '2.2.12-local-calendar-date-fix';
+const APP_VERSION = '2.2.13-gmt-clean-start-admin-delete';
 
 const cleanProfiles: AthleteProfile[] = [
   {
@@ -87,18 +87,34 @@ const fmaClasses = [
 
 function storage<T>(key:string, fallback:T):T { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; } }
 function setStorage<T>(key:string, value:T){ localStorage.setItem(key, JSON.stringify(value)); }
-function localDateString(date: Date){
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+const APP_TIME_ZONE = 'GMT';
+const CLEAN_START_CUTOFF_UTC = '2026-06-21T07:33:32Z';
+function pad2(value: number){ return String(value).padStart(2, '0'); }
+function dateOnly(value?: string | Date | null){
+  if (!value) return dateOnly(new Date());
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+  }
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (!Number.isNaN(d.getTime())) return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth()+1)}-${pad2(d.getUTCDate())}`;
+  return String(value).slice(0,10);
 }
-function todayISO(){ return localDateString(new Date()); }
-function addDays(date: Date, days: number){ const d = new Date(date); d.setDate(d.getDate()+days); return d; }
-function startOfWeek(date = new Date()){ const d = new Date(date); const day = d.getDay() || 7; d.setDate(d.getDate() - day + 1); d.setHours(0,0,0,0); return d; }
+function normaliseTime(value?: string | null){
+  const text = String(value || '').trim();
+  const match = text.match(/^(\d{2}:\d{2})/);
+  return match ? match[1] : '';
+}
+function toGmtSessionDate(value?: string | Date | null){ return `${dateOnly(value)}T12:00:00+00:00`; }
+function isAfterCleanStart(row: any){ return !row?.created_at || new Date(row.created_at).getTime() >= new Date(CLEAN_START_CUTOFF_UTC).getTime(); }
+function localDateString(date: Date){ return dateOnly(date); }
+function todayISO(){ return dateOnly(new Date()); }
+function dateFromIso(value: string | Date){ const [y,m,d] = dateOnly(value).split('-').map(Number); return new Date(Date.UTC(y, m-1, d, 12, 0, 0)); }
+function addDays(date: Date | string, days: number){ const d = dateFromIso(date); d.setUTCDate(d.getUTCDate()+days); return d; }
+function startOfWeek(date: Date | string = new Date()){ const d = dateFromIso(date); const day = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() - day + 1); return d; }
 function weekDates(){ const start = startOfWeek(); return Array.from({length:7}, (_,i)=>addDays(start,i)); }
-function iso(date: Date){ return localDateString(date); }
-function dayLabel(date: Date){ return date.toLocaleDateString('en-GB', { weekday:'short', day:'numeric', month:'short' }); }
+function iso(date: Date | string){ return dateOnly(date); }
+function dayLabel(date: Date | string){ return dateFromIso(date).toLocaleDateString('en-GB', { timeZone: APP_TIME_ZONE, weekday:'short', day:'numeric', month:'short' }); }
 function titleCase(v?: string | null){ return (v || '').split(/\s+/).filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' '); }
 function sentence(v?: string | null){ const s = (v || '').trim(); return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
 function bodyOf(e: Exercise){ return e.body_part || e.body_parts || 'general'; }
@@ -385,8 +401,8 @@ async function saveRemoteSession(event: CalendarEvent, plan: WorkoutPlan | undef
     const { data, error } = await supabase.from('training_sessions').insert({
       athlete_id: remoteAthleteId,
       programme_id: remoteProgrammeId,
-      session_date: event.date,
-      start_time: event.time || null,
+      session_date: toGmtSessionDate(event.date),
+      start_time: normaliseTime(event.time) || null,
       title: event.title,
       session_type: event.type,
       status: event.status || 'planned',
@@ -394,7 +410,7 @@ async function saveRemoteSession(event: CalendarEvent, plan: WorkoutPlan | undef
       notes: event.athlete_email ? `Assigned to ${event.athlete_name || profile.name} (${event.athlete_email})` : null,
     }).select('*').single();
     if (error) throw error;
-    return { ...event, remote_id: data?.id || event.remote_id, remote_plan_id: remoteProgrammeId || undefined };
+    return { ...event, date: dateOnly(event.date), time: normaliseTime(event.time), remote_id: data?.id || event.remote_id, remote_plan_id: remoteProgrammeId || undefined };
   } catch (err) {
     console.warn('Supabase session sync skipped:', err);
     return event;
@@ -409,14 +425,60 @@ async function updateRemoteSessionStatus(event: CalendarEvent, status: CalendarE
       .from('training_sessions')
       .update({
         status,
-        session_date: date || event.date,
-        start_time: time || event.time || null,
+        session_date: toGmtSessionDate(date || event.date),
+        start_time: normaliseTime(time || event.time) || null,
       })
       .eq('id', event.remote_id);
     if (error) console.warn('Supabase session status update skipped:', error);
   } catch (err) {
     console.warn('Supabase session status update skipped:', err);
   }
+}
+
+
+async function deleteRemoteSession(event: CalendarEvent): Promise<boolean> {
+  if (!supabase) return true;
+  const remoteId = event.remote_id || event.id;
+  if (!remoteId) return true;
+  try {
+    const { error } = await supabase.from('training_sessions').delete().eq('id', remoteId);
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.warn('Supabase session delete skipped:', err);
+    return false;
+  }
+}
+
+async function deleteRemoteProgramme(plan: WorkoutPlan): Promise<boolean> {
+  if (!supabase) return true;
+  const remoteId = (plan as any).remote_id || plan.id;
+  if (!remoteId) return true;
+  try {
+    await supabase.from('workout_programme_exercises').delete().eq('programme_id', remoteId);
+    const { error } = await supabase.from('workout_programmes').delete().eq('id', remoteId);
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    console.warn('Supabase programme delete skipped:', err);
+    return false;
+  }
+}
+
+async function clearRemoteDiaryAndWorkouts(): Promise<boolean> {
+  if (!supabase) return true;
+  let ok = true;
+  const clear = async (table: string) => {
+    try {
+      const { error } = await supabase.from(table).delete().not('id','is',null);
+      if (error) { console.warn(`Supabase ${table} clear skipped:`, error); ok = false; }
+    } catch (err) { console.warn(`Supabase ${table} clear skipped:`, err); ok = false; }
+  };
+  await clear('workout_logs');
+  await clear('training_sessions');
+  await clear('workout_programme_exercises');
+  await clear('workout_programmes');
+  return ok;
 }
 
 function migrateFinalState(){
@@ -440,9 +502,14 @@ function migrateFinalState(){
         ? cleanProfiles[0]
         : currentProfile || defaultProfile;
 
+    const cleanStartKey = 'bbb_v2213_fresh_start_done';
+    const freshStartAlreadyRun = localStorage.getItem(cleanStartKey);
     localStorage.setItem('bbb_users', JSON.stringify(users));
     localStorage.setItem('bbb_athletes', JSON.stringify(athletes));
-    localStorage.setItem('bbb_events', JSON.stringify(events));
+    localStorage.setItem('bbb_events', JSON.stringify(freshStartAlreadyRun ? events.map(e=>({...e,date:dateOnly(e.date),time:normaliseTime(e.time)})) : []));
+    localStorage.setItem('bbb_plans', JSON.stringify(freshStartAlreadyRun ? JSON.parse(localStorage.getItem('bbb_plans') || '[]') : []));
+    localStorage.setItem('bbb_logs', JSON.stringify(freshStartAlreadyRun ? JSON.parse(localStorage.getItem('bbb_logs') || '[]') : []));
+    if (!freshStartAlreadyRun) localStorage.setItem(cleanStartKey, 'pending-remote');
     localStorage.setItem('bbb_profile', JSON.stringify(profile));
     if (currentUser) localStorage.setItem('bbb_current_user', JSON.stringify(currentUser));
     localStorage.setItem('bbb_removed_old_james_profile_v228', 'done');
@@ -508,9 +575,20 @@ function App() {
       const mappedAthletes: AthleteProfile[] = activeRemoteAthletes.map(mapRemoteAthleteToLocal);
       if (mappedAthletes.length) setAthletes(prev => canonicaliseAthletes(mergeUniqueById(prev, mappedAthletes)));
 
-      const { data: remotePlans } = await supabase.from('workout_programmes').select('*').order('created_at', { ascending:false });
+      const cleanStartKey = 'bbb_v2213_fresh_start_done';
+      const cleanStartPending = localStorage.getItem(cleanStartKey) === 'pending-remote';
+      if (cleanStartPending) {
+        const remoteCleared = await clearRemoteDiaryAndWorkouts();
+        setEvents([]); setPlans([]); setLogs([]);
+        setStorage('bbb_events', []); setStorage('bbb_plans', []); setStorage('bbb_logs', []);
+        localStorage.setItem(cleanStartKey, 'done');
+        if (!remoteCleared) console.warn('Remote clean start did not fully delete old rows. Old rows will be ignored by the clean-start cutoff, but add the V2.2.13 delete policies in Supabase to enable admin deletion.');
+      }
+
+      const { data: remotePlans } = cleanStartPending ? { data: [] as any[] } : await supabase.from('workout_programmes').select('*').order('created_at', { ascending:false });
       const { data: remotePlanExercises } = await supabase.from('workout_programme_exercises').select('*').order('sort_order', { ascending:true });
-      const mappedPlans: WorkoutPlan[] = (remotePlans || []).map((p:any)=>({
+      const remotePlansRaw = (remotePlans || []).filter(isAfterCleanStart);
+      const mappedPlans: WorkoutPlan[] = remotePlansRaw.map((p:any)=>({
         id:p.id,
         remote_id:p.id,
         name:p.name,
@@ -527,8 +605,9 @@ function App() {
       }));
       if (mappedPlans.length) setPlans(prev => mergeUniqueById(prev, mappedPlans));
 
-      const { data: remoteSessions } = await supabase.from('training_sessions').select('*').order('session_date', { ascending:true });
-      const mappedEvents: CalendarEvent[] = (remoteSessions || []).map((e:any)=>{
+      const { data: remoteSessions } = cleanStartPending ? { data: [] as any[] } : await supabase.from('training_sessions').select('*').order('session_date', { ascending:true });
+      const remoteSessionsRaw = (remoteSessions || []).filter(isAfterCleanStart);
+      const mappedEvents: CalendarEvent[] = remoteSessionsRaw.map((e:any)=>{
         const remoteAthlete = remoteAthleteMap.get(e.athlete_id);
         const athleteProfile = remoteAthlete ? mapRemoteAthleteToLocal(remoteAthlete) : undefined;
         return {
@@ -539,8 +618,8 @@ function App() {
           athlete_name:athleteProfile?.name || remoteAthleteDisplayName(remoteAthlete) || undefined,
           workout_plan_id:e.programme_id || undefined,
           remote_plan_id:e.programme_id || undefined,
-          date:e.session_date,
-          time:e.start_time ? String(e.start_time).slice(0,5) : '',
+          date:dateOnly(e.session_date),
+          time:normaliseTime(e.start_time),
           title:e.title,
           type:(e.session_type || 'Gym') as SessionType,
           status:(e.status || 'planned') as CalendarEvent['status'],
@@ -596,7 +675,7 @@ function App() {
       {page==='stats' && <Stats logs={logs} events={visibleEvents} profile={profile}/>} 
       {page==='badges' && <Badges badges={liveBadges}/>} 
       {page==='profile' && <Profile profile={profile} setProfile={(p)=>{setProfile(p); setAthletes(athletes.map(a=>a.id===p.id?p:a));}}/>} 
-      {page==='admin' && <Admin profile={profile} events={events} setEvents={setEvents} plans={plans} exercises={exercises} setExercises={setExercises} users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/>} 
+      {page==='admin' && <Admin profile={profile} events={events} setEvents={setEvents} plans={plans} setPlans={setPlans} logs={logs} setLogs={setLogs} exercises={exercises} setExercises={setExercises} users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/>} 
     </main>
     {video && <VideoModal title={video.title} url={video.url} onClose={()=>setVideo(null)} />}
   </div>;
@@ -660,7 +739,7 @@ function Dashboard({logs,events,badges,profile,setPage,openSession}:{logs:Workou
   </div>
 }
 function Kpi({label,value}:{label:string;value:string|number}){ return <div className="kpi"><span>{label}</span><b>{value}</b></div> }
-function SessionRow({event,onClick}:{event:CalendarEvent; onClick:()=>void}){ return <button className="sessionRow" onClick={onClick}><span className={classNameForType(event.type)}>{event.type}</span><div><b>{event.time || 'Time TBC'} · {event.title}</b><em>{event.date}</em></div><ChevronRight size={18}/></button> }
+function SessionRow({event,onClick}:{event:CalendarEvent; onClick:()=>void}){ return <button className="sessionRow" onClick={onClick}><span className={classNameForType(event.type)}>{event.type}</span><div><b>{event.time || 'Time TBC'} · {event.title}</b><em>{dateOnly(event.date)}</em></div><ChevronRight size={18}/></button> }
 
 function ExerciseLibrary({exercises,onPlay}:{exercises:Exercise[];onPlay:(e:Exercise)=>void}){
   const [q,setQ]=useState(''); const [category,setCategory]=useState('all'); const [body,setBody]=useState('all');
@@ -692,9 +771,9 @@ function TrainingCalendar({events,setEvents,openSession}:{events:CalendarEvent[]
   const currentWeek = weekDates();
   const nextWeek = Array.from({length:7}, (_,i)=>addDays(startOfWeek(), i+7));
   const [newDate,setNewDate]=useState(todayISO()); const [newTime,setNewTime]=useState('18:00'); const [newTitle,setNewTitle]=useState('Training Session'); const [newType,setNewType]=useState<SessionType>('Gym');
-  function add(){ setEvents([...events,{id:crypto.randomUUID(), date:newDate, time:newTime, title:newTitle, type:newType, status:'planned'}]); }
+  function add(){ setEvents([...events,{id:crypto.randomUUID(), date:dateOnly(newDate), time:normaliseTime(newTime), title:newTitle, type:newType, status:'planned'}]); }
   function renderWeek(days: Date[], title: string){
-    return <div className="weekBlock"><h4>{title}</h4><div className="weekGrid">{days.map(d=>{ const dayEvents=events.filter(e=>e.date===iso(d)).sort((a,b)=>(a.time||'').localeCompare(b.time||'')); return <div className="dayColumn" key={iso(d)}><h4>{dayLabel(d)}</h4>{dayEvents.length===0 && <span className="emptyDay">No session</span>}{dayEvents.map(e=><button key={e.id} className={`calendarSession ${e.status}`} onClick={()=>openSession(e)}><span>{e.time}</span><b>{e.title}</b><em>{e.type}</em></button>)}</div>})}</div></div>
+    return <div className="weekBlock"><h4>{title}</h4><div className="weekGrid">{days.map(d=>{ const dayEvents=events.filter(e=>dateOnly(e.date)===iso(d)).sort((a,b)=>(normaliseTime(a.time)||'').localeCompare(normaliseTime(b.time)||'')); return <div className="dayColumn" key={iso(d)}><h4>{dayLabel(d)}</h4>{dayEvents.length===0 && <span className="emptyDay">No session</span>}{dayEvents.map(e=><button key={e.id} className={`calendarSession ${e.status}`} onClick={()=>openSession(e)}><span>{e.time}</span><b>{e.title}</b><em>{e.type}</em></button>)}</div>})}</div></div>
   }
   return <div className="calendarPage">
     <section className="panel"><div className="row between"><div><h3>Training Calendar</h3><p className="muted">Current week and next week are shown. Click any session to open the completion page.</p></div></div><div className="calendarWeeks">{renderWeek(currentWeek,'Current Week')}{renderWeek(nextWeek,'Next Week')}</div></section>
@@ -705,7 +784,7 @@ const sessionTypes: SessionType[] = ['Home','Gym','FMA','MMA','BJJ','Boxing','Ki
 
 function Today({events,exercises,logs,setLogs,onPlay,openSession}:{events:CalendarEvent[];exercises:Exercise[];logs:WorkoutLog[];setLogs:(l:WorkoutLog[])=>void;onPlay:(e:Exercise)=>void;openSession:(e:CalendarEvent)=>void}){
   const [date,setDate]=useState(todayISO());
-  const sessions=events.filter(e=>e.date===date).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+  const sessions=events.filter(e=>dateOnly(e.date)===dateOnly(date)).sort((a,b)=>(normaliseTime(a.time)||'').localeCompare(normaliseTime(b.time)||''));
   return <section className="panel"><div className="row between"><div><h3>Today's Training</h3><p className="muted">Choose a date, open a session, follow the exercises and log completion.</p></div><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>{sessions.length===0 && <p className="muted">No sessions planned for this date.</p>}{sessions.map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}</section>
 }
 
@@ -752,9 +831,9 @@ function ClassSessionCompletion({session,setSession,events,setEvents}:{session:C
   const [date,setDate]=useState(session.date || todayISO());
   const [time,setTime]=useState(session.time || '19:00');
   function updateStatus(status:'completed'|'missed'){
-    const updated = events.map(e=>e.id===session.id?{...e,date,time,status}:e);
+    const updated = events.map(e=>e.id===session.id?{...e,date:dateOnly(date),time:normaliseTime(time),status}:e);
     setEvents(updated);
-    setSession({...session,date,time,status});
+    setSession({...session,date:dateOnly(date),time:normaliseTime(time),status});
   }
   return <section className="panel classCompletionPanel"><div className="classHero"><div><span className={classNameForType(session.type)}>{session.class_name ? 'FMA Class' : session.type}</span><h3>{session.class_name || session.title}</h3><p className="muted">This is a class session. It tracks attendance and calendar completion only. There are no individual exercise logs, sets, reps or weight entries for FMA classes.</p></div><div className={`classStatus ${session.status}`}><b>{titleCase(session.status)}</b><span>Attendance status</span></div></div><div className="grid two"><label>Class Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Class Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="classActions"><button className="primary big" onClick={()=>updateStatus('completed')}><CheckCircle2 size={18}/>Mark Class Attended</button><button className="big" onClick={()=>updateStatus('missed')}><X size={18}/>Mark Class Missed</button></div><div className="classNote"><b>Class focus</b><p>{fmaClasses.find(c=>c.name===session.class_name)?.focus || 'FMA academy session added to the training calendar.'}</p></div></section>
 }
@@ -820,12 +899,12 @@ function WorkoutBuilder({exercises,plans,setPlans,currentUser,athletes,users,eve
   function deletePlan(planId:string){ const next=plans.filter(p=>p.id!==planId); setPlans(next); setStorage('bbb_plans', next); if(editingPlanId===planId) resetDraft(); }
   async function addToMyCalendar(plan: WorkoutPlan){
     const assigned = resolveAssignmentProfile(selfProfile, users, athletes);
-    const event: CalendarEvent = { id:crypto.randomUUID(), athlete_id:assigned.id, athlete_email:assigned.email || currentUser.email, athlete_name:assigned.name || currentUser.name, assigned_by_user_id:currentUser.id, workout_plan_id:plan.id, date:scheduleDate, time:scheduleTime, title:plan.name, type:plan.session_type || 'Gym', status:'planned' };
+    const event: CalendarEvent = { id:crypto.randomUUID(), athlete_id:assigned.id, athlete_email:assigned.email || currentUser.email, athlete_name:assigned.name || currentUser.name, assigned_by_user_id:currentUser.id, workout_plan_id:plan.id, date:dateOnly(scheduleDate), time:normaliseTime(scheduleTime), title:plan.name, type:plan.session_type || 'Gym', status:'planned' };
     const remoteSynced = await saveRemoteSession(event, plan, selfProfile);
     const next=[remoteSynced, ...events.filter(e=>e.id!==remoteSynced.id)];
     setEvents(next);
     setStorage('bbb_events', next);
-    setBuilderStatus(`${plan.name} has been added to ${assigned.name}'s calendar on ${scheduleDate} at ${scheduleTime}.`);
+    setBuilderStatus(`${plan.name} has been added to ${assigned.name}'s calendar on ${dateOnly(scheduleDate)} at ${normaliseTime(scheduleTime)}.`);
   }
   return <section className="panel builderPage"><div><h3>Workout Builder</h3><p className="muted">Select a body part first, build a focused session, then save it. You can edit saved workouts or add them directly to your own calendar.</p></div><div className="grid three"><label>Workout Name<input value={name} onChange={e=>setName(e.target.value)}/></label><label>Training Focus<input value={focus} onChange={e=>setFocus(e.target.value)}/></label><label>Session Type<select value={sessionType} onChange={e=>setSessionType(e.target.value as SessionType)}>{sessionTypes.map(t=><option key={t}>{t}</option>)}</select></label></div><div className="builderLayout"><div><h4>1. Body Part</h4><div className="bodyList">{bodies.map(b=><button className={`listBtn ${b===body?'activeBody':''}`} onClick={()=>setBody(b)} key={b}><span>{titleCase(b)}</span><span>{exercises.filter(e=>bodyOf(e)===b).length}</span></button>)}</div></div><div><h4>2. Choose Exercises For {titleCase(body)}</h4><div className="searchBox"><Search size={16}/><input placeholder={`Search ${titleCase(body)} exercises`} value={q} onChange={e=>setQ(e.target.value)}/></div><div className="selectList">{list.map(e=><button className="listBtn" key={e.exercise_id} onClick={()=>addExercise(e)}><span>+ {titleCase(e.name)}</span><small>{titleCase(e.target)}</small></button>)}</div></div><div className="builderPlan"><div className="row between"><h4>{editingPlanId ? 'Editing Workout' : 'Draft Workout'}</h4><button className="miniBtn" onClick={savePlan} disabled={!selected.length}><Save size={16}/>{editingPlanId ? 'Update' : 'Save'}</button></div>{selected.length===0 && <p className="muted">Select exercises from the list.</p>}{selected.map((e,i)=><div className="preview editableExercise" key={`${e.exercise_id}-${i}`}><b>{i+1}. {e.name}</b><div className="miniGrid"><label>Sets<input type="number" value={e.planned_sets || 3} onChange={ev=>updateSelected(i,'planned_sets',ev.target.value)}/></label><label>Reps<input value={e.planned_reps || ''} onChange={ev=>updateSelected(i,'planned_reps',ev.target.value)}/></label><label>Weight<input value={e.planned_weight || ''} onChange={ev=>updateSelected(i,'planned_weight',ev.target.value)}/></label></div><button className="miniBtn" onClick={()=>setSelected(selected.filter((_,idx)=>idx!==i))}>Remove</button></div>)}{editingPlanId && <button onClick={resetDraft}>Start New Workout</button>}</div></div>{builderStatus && <div className="status">{builderStatus}</div>}<section className="panel inner"><h3>Saved Workouts</h3><p className="muted">Open any saved workout to view, edit, or add it to your own calendar.</p><div className="grid two scheduleSelf"><label>Session Date<input type="date" value={scheduleDate} onChange={e=>setScheduleDate(e.target.value)}/></label><label>Session Time<input type="time" value={scheduleTime} onChange={e=>setScheduleTime(e.target.value)}/></label></div>{plans.length===0 ? <p className="muted">No saved programmes yet.</p> : plans.map(p=><div className="preview savedWorkout" key={p.id}><b>{p.name}</b><span>{p.focus}</span><em>{p.exercises.length} exercises · {p.session_type || 'Gym'}</em><div className="row actions"><button onClick={()=>editPlan(p)}>View / Edit</button><button className="primary" onClick={()=>addToMyCalendar(p)}><CalendarDays size={16}/>Add to My Calendar</button><button onClick={()=>deletePlan(p.id)}>Delete</button></div></div>)}</section></section>
 }
@@ -837,7 +916,7 @@ function FmaClasses({events,setEvents,openSession}:{events:CalendarEvent[];setEv
   const [date,setDate]=useState(todayISO()); const [time,setTime]=useState('19:00');
   const [newClassName,setNewClassName]=useState(''); const [newClassFocus,setNewClassFocus]=useState('');
   useEffect(()=>{ setStorage('bbb_fma_classes', classOptions); }, [classOptions]);
-  function add(){ const event={id:crypto.randomUUID(),date,time,title:`FMA ${selected.name}`,type:'FMA' as SessionType,status:'planned' as const,class_name:selected.name}; setEvents([...events,event]); }
+  function add(){ const event={id:crypto.randomUUID(),date:dateOnly(date),time:normaliseTime(time),title:`FMA ${selected.name}`,type:'FMA' as SessionType,status:'planned' as const,class_name:selected.name}; setEvents([...events,event]); }
   function addClassType(){
     const name = newClassName.trim();
     const focus = newClassFocus.trim() || 'Class session.';
@@ -856,7 +935,7 @@ function Stats({logs,events,profile}:{logs:WorkoutLog[];events:CalendarEvent[];p
   const weekStart=iso(startOfWeek()); const weekEnd=iso(addDays(startOfWeek(),6));
   const thisWeek=events.filter(e=>e.date>=weekStart && e.date<=weekEnd && e.status==='completed');
   const typeCounts=sessionTypes.map(t=>({type:t,count:thisWeek.filter(e=>e.type===t).length})).filter(x=>x.count>0);
-  const chart = Array.from({length:7}, (_,i)=>{ const d=iso(addDays(startOfWeek(),i)); return { day: addDays(startOfWeek(),i).toLocaleDateString('en-GB',{weekday:'short'}), sessions: events.filter(e=>e.date===d && e.status==='completed').length, exercises: logs.filter(l=>l.date===d && l.completed).length }; });
+  const chart = Array.from({length:7}, (_,i)=>{ const d=iso(addDays(startOfWeek(),i)); return { day: addDays(startOfWeek(),i).toLocaleDateString('en-GB',{timeZone:APP_TIME_ZONE,weekday:'short'}), sessions: events.filter(e=>dateOnly(e.date)===d && e.status==='completed').length, exercises: logs.filter(l=>dateOnly(l.date)===d && l.completed).length }; });
   return <div><div className="kpiRow statsKpis"><Kpi label="Exercises Completed" value={exercisesCompleted}/><Kpi label="Sessions Completed" value={sessionsCompleted}/><Kpi label="Workout Streak" value={`${streak} days`}/><Kpi label="Current Weight" value={`${profile.weight_kg || '—'} kg`}/></div><section className="panel"><h3>This Week By Session Type</h3>{typeCounts.length===0 ? <p className="muted">No completed sessions this week yet.</p> : <div className="typeCountGrid">{typeCounts.map(x=><div className="typeCount" key={x.type}><span className={classNameForType(x.type)}>{x.type}</span><b>{x.count}</b></div>)}</div>}</section><section className="panel"><h3>Weekly Output</h3><div className="chart"><ResponsiveContainer width="100%" height={260}><BarChart data={chart}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="day"/><YAxis/><Tooltip/><Bar dataKey="sessions"/><Bar dataKey="exercises"/></BarChart></ResponsiveContainer></div></section></div>
 }
 function calcStreak(logs:WorkoutLog[], events:CalendarEvent[]){ const doneDates=new Set([...logs.filter(l=>l.completed).map(l=>l.date), ...events.filter(e=>e.status==='completed').map(e=>e.date)]); let streak=0; for(let i=0;i<365;i++){ const d=iso(addDays(new Date(), -i)); if(doneDates.has(d)) streak++; else if(i>0) break; } return streak; }
@@ -888,11 +967,17 @@ function Badges({badges}:{badges:Badge[]}){ return <section className="panel"><h
 function Profile({profile,setProfile}:{profile:AthleteProfile;setProfile:(p:AthleteProfile)=>void}){ function upd(k:keyof AthleteProfile,v:any){ setProfile({...profile,[k]:v}); } return <section className="panel profilePage"><h3>Athlete Profile</h3><p className="muted">These details help personalise targets, BMI, competition planning and progress tracking.</p><div className="grid three"><Field label="Athlete Name" help="Shown throughout the app." value={profile.name} onChange={v=>upd('name',v)}/><Field label="Age" help="Current age in years." value={profile.age||''} type="number" onChange={v=>upd('age',Number(v))}/><Field label="Gym / Academy" help="Primary training location." value={profile.gym||''} onChange={v=>upd('gym',v)}/><Field label="Height (cm)" help="Used to calculate BMI." value={profile.height_cm||''} type="number" onChange={v=>upd('height_cm',Number(v))}/><Field label="Weight (kg)" help="Current body weight." value={profile.weight_kg||''} type="number" onChange={v=>upd('weight_kg',Number(v))}/><Field label="Competition Weight (kg)" help="Target fight or competition weight." value={profile.competition_weight_kg||''} type="number" onChange={v=>upd('competition_weight_kg',Number(v))}/><Field label="Belt Rank" help="Current martial arts rank." value={profile.belt_rank||''} onChange={v=>upd('belt_rank',v)}/><Field label="Profile Photo URL" help="Optional image link for later use." value={profile.profile_photo_url||''} onChange={v=>upd('profile_photo_url',v)}/><div className="profileStat"><span>BMI</span><b>{bmi(profile)||'—'}</b><em>Calculated from height and weight.</em></div></div><label className="fullLabel">Athlete Goal<span>Main training objective.</span><textarea value={profile.goal||''} onChange={e=>upd('goal',e.target.value)}/></label></section> }
 function Field({label,help,value,onChange,type='text'}:{label:string;help:string;value:any;type?:string;onChange:(v:string)=>void}){ return <label className="fieldLabel">{label}<span>{help}</span><input type={type} value={value} onChange={e=>onChange(e.target.value)}/></label> }
 
-function Admin({profile,events,setEvents,plans,exercises,setExercises,users,setUsers,athletes,setAthletes}:{profile:AthleteProfile;events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;plans:WorkoutPlan[];exercises:Exercise[];setExercises:(e:Exercise[])=>void;users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){
-  return <div className="adminGrid"><section className="panel"><h3>Admin Console</h3><div className="grid three"><Kpi label="Athletes" value={athletes.length}/><Kpi label="Sessions Planned" value={events.length}/><Kpi label="Saved Programmes" value={plans.length}/></div></section><WorkoutAssignment plans={plans} athletes={athletes} users={users} events={events} setEvents={setEvents}/><AdminTrainingDiary events={events} athletes={athletes} users={users}/><AthleteCreator users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/><ManualExercise setExercises={setExercises} exercises={exercises}/></div>
+function Admin({profile,events,setEvents,plans,setPlans,logs,setLogs,exercises,setExercises,users,setUsers,athletes,setAthletes}:{profile:AthleteProfile;events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;plans:WorkoutPlan[];setPlans:(p:WorkoutPlan[])=>void;logs:WorkoutLog[];setLogs:(l:WorkoutLog[])=>void;exercises:Exercise[];setExercises:(e:Exercise[])=>void;users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){
+  return <div className="adminGrid"><section className="panel"><h3>Admin Console</h3><div className="grid three"><Kpi label="Athletes" value={athletes.length}/><Kpi label="Sessions Planned" value={events.length}/><Kpi label="Saved Programmes" value={plans.length}/></div></section><AdminResetControls events={events} setEvents={setEvents} plans={plans} setPlans={setPlans} logs={logs} setLogs={setLogs}/><WorkoutAssignment plans={plans} athletes={athletes} users={users} events={events} setEvents={setEvents}/><AdminTrainingDiary events={events} setEvents={setEvents} athletes={athletes} users={users}/><AdminWorkoutManager plans={plans} setPlans={setPlans}/><AthleteCreator users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes}/><ManualExercise setExercises={setExercises} exercises={exercises}/></div>
 }
 
-function AdminTrainingDiary({events,athletes,users}:{events:CalendarEvent[]; athletes:AthleteProfile[]; users:AppUser[]}){
+function AdminResetControls({events,setEvents,plans,setPlans,logs,setLogs}:{events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;plans:WorkoutPlan[];setPlans:(p:WorkoutPlan[])=>void;logs:WorkoutLog[];setLogs:(l:WorkoutLog[])=>void}){
+  const [status,setStatus]=useState('');
+  async function clearDiary(){ setStatus('Deleting all diary events and class sessions...'); await clearRemoteDiaryAndWorkouts(); setEvents([]); setPlans([]); setLogs([]); setStorage('bbb_events', []); setStorage('bbb_plans', []); setStorage('bbb_logs', []); localStorage.setItem('bbb_v2213_fresh_start_done','done'); setStatus('Diary events, class sessions and saved workouts have been cleared.'); }
+  return <section className="panel adminMaintenance"><h3>Admin Maintenance</h3><p className="muted">Use this to keep the live app tidy. This clears diary events, class sessions, saved workouts and exercise logs so the real programme can be rebuilt from scratch.</p><button className="dangerBtn" onClick={clearDiary}>Delete all sessions and saved workouts</button>{status && <div className="status">{status}</div>}</section>
+}
+
+function AdminTrainingDiary({events,setEvents,athletes,users}:{events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; athletes:AthleteProfile[]; users:AppUser[]}){
   const athleteOptions = getAthleteOptions(athletes);
   const defaultAthlete = athleteOptions.find(a=>normalise(a.name)==='james hiles') || athleteOptions[0];
   const [athleteId,setAthleteId] = useState(defaultAthlete?.id || '');
@@ -902,7 +987,13 @@ function AdminTrainingDiary({events,athletes,users}:{events:CalendarEvent[]; ath
   const completed = diary.filter(e=>e.status==='completed').length;
   const planned = diary.filter(e=>e.status==='planned').length;
   const classSessions = diary.filter(e=>e.type==='FMA' || !!e.class_name).length;
-  return <section className="panel adminDiaryPanel"><div className="row between diaryHeader"><div><h3>Athlete Training Diary</h3><p className="muted">View the selected athlete's calendar, assigned workouts and class sessions from the admin profile.</p></div><label>View Athlete<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label></div><div className="kpiRow diaryKpis"><Kpi label="Planned" value={planned}/><Kpi label="Completed" value={completed}/><Kpi label="Class Sessions" value={classSessions}/><Kpi label="Total Diary Items" value={diary.length}/></div>{diary.length===0 ? <p className="status">No sessions are currently assigned to {athlete?.name || 'this athlete'}. Their diary is clean and ready for new programmes.</p> : <div className="diaryList">{diary.map(e=><div className="preview diaryItem" key={e.id}><b>{e.title}</b><span>{e.date} · {e.time || 'Time TBC'} · {e.type}</span><em>{titleCase(e.status)}{e.workout_plan_id ? ' · Assigned workout' : e.class_name ? ` · ${e.class_name}` : ''}</em></div>)}</div>}</section>
+  async function removeDiaryEvent(event: CalendarEvent){ await deleteRemoteSession(event); const next=events.filter(e=>e.id!==event.id && e.remote_id!==event.remote_id); setEvents(next); setStorage('bbb_events', next); }
+  return <section className="panel adminDiaryPanel"><div className="row between diaryHeader"><div><h3>Athlete Training Diary</h3><p className="muted">View and delete the selected athlete's calendar items, assigned workouts and class sessions from the admin profile.</p></div><label>View Athlete<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label></div><div className="kpiRow diaryKpis"><Kpi label="Planned" value={planned}/><Kpi label="Completed" value={completed}/><Kpi label="Class Sessions" value={classSessions}/><Kpi label="Total Diary Items" value={diary.length}/></div>{diary.length===0 ? <p className="status">No sessions are currently assigned to {athlete?.name || 'this athlete'}. Their diary is clean and ready for new programmes.</p> : <div className="diaryList">{diary.map(e=><div className="preview diaryItem" key={e.id}><b>{e.title}</b><span>{dateOnly(e.date)} · {normaliseTime(e.time) || 'Time TBC'} · {e.type}</span><em>{titleCase(e.status)}{e.workout_plan_id ? ' · Assigned workout' : e.class_name ? ` · ${e.class_name}` : ''}</em><button className="miniBtn dangerBtn" onClick={()=>removeDiaryEvent(e)}>Delete diary item</button></div>)}</div>}</section>
+}
+
+function AdminWorkoutManager({plans,setPlans}:{plans:WorkoutPlan[];setPlans:(p:WorkoutPlan[])=>void}){
+  async function removePlan(plan: WorkoutPlan){ await deleteRemoteProgramme(plan); const next=plans.filter(p=>p.id!==plan.id && (p as any).remote_id!==(plan as any).remote_id); setPlans(next); setStorage('bbb_plans', next); }
+  return <section className="panel"><h3>Saved Workout Management</h3><p className="muted">View and delete workouts already built in the Workout Builder.</p>{plans.length===0 ? <p className="status">No saved workouts.</p> : plans.map(p=><div className="preview" key={p.id}><b>{p.name}</b><span>{p.focus || 'No focus added'}</span><em>{p.exercises.length} exercises · {p.session_type || 'Gym'}</em><button className="miniBtn dangerBtn" onClick={()=>removePlan(p)}>Delete saved workout</button></div>)}</section>
 }
 
 function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:WorkoutPlan[]; athletes:AthleteProfile[]; users:AppUser[]; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void}){
@@ -927,8 +1018,8 @@ function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:Workou
       athlete_name: assigned.name || athlete.name,
       assigned_by_user_id: 'admin-alex',
       workout_plan_id: plan.id,
-      date,
-      time,
+      date:dateOnly(date),
+      time:normaliseTime(time),
       title: plan.name,
       type: plan.session_type || 'Gym',
       status: 'planned',
@@ -938,9 +1029,9 @@ function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:Workou
     const nextEvents = [remoteSynced, ...events.filter(e => e.id !== remoteSynced.id && e.remote_id !== remoteSynced.remote_id)];
     setEvents(nextEvents);
     setStorage('bbb_events', nextEvents);
-    setStatus(`${plan.name} has been pushed to ${assigned.name}. It will appear in ${assigned.name}'s Training Calendar on ${date} at ${time}.`);
+    setStatus(`${plan.name} has been pushed to ${assigned.name}. It will appear in ${assigned.name}'s Training Calendar on ${dateOnly(date)} at ${normaliseTime(time)}.`);
   }
-  return <section className="panel"><h3>Assign Workout To Athlete</h3><p className="muted">Create workouts in the Workout Builder, then push the saved workout to a selected athlete. The session is attached to the athlete profile selected below, not automatically to the trainer profile.</p>{plans.length===0 ? <p className="status">No saved workouts yet. Create and save a workout in the Workout Builder first.</p> : <><div className="grid two"><label>Saved Workout<select value={planId} onChange={e=>setPlanId(e.target.value)}>{plans.map(p=><option key={p.id} value={p.id}>{p.name} · {p.exercises.length} exercises</option>)}</select></label><label>Assign To Profile<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Session Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary" onClick={assign}><CalendarDays size={16}/>Push workout to profile</button></div></>}{status && <div className="status">{status}</div>}<div className="assignmentList"><h4>Recently Assigned To Profiles</h4>{events.filter(e=>e.workout_plan_id && e.athlete_id).slice(0,5).map(e=><div className="preview" key={e.id}><b>{e.title}</b><span>{e.date} · {e.time || 'Time TBC'}</span><em>{e.athlete_name || athletes.find(a=>a.id===e.athlete_id)?.name || 'Athlete not assigned'}</em></div>)}</div></section>
+  return <section className="panel"><h3>Assign Workout To Athlete</h3><p className="muted">Create workouts in the Workout Builder, then push the saved workout to a selected athlete. The session is attached to the athlete profile selected below, not automatically to the trainer profile.</p>{plans.length===0 ? <p className="status">No saved workouts yet. Create and save a workout in the Workout Builder first.</p> : <><div className="grid two"><label>Saved Workout<select value={planId} onChange={e=>setPlanId(e.target.value)}>{plans.map(p=><option key={p.id} value={p.id}>{p.name} · {p.exercises.length} exercises</option>)}</select></label><label>Assign To Profile<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Session Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary" onClick={assign}><CalendarDays size={16}/>Push workout to profile</button></div></>}{status && <div className="status">{status}</div>}<div className="assignmentList"><h4>Recently Assigned To Profiles</h4>{events.filter(e=>e.workout_plan_id && e.athlete_id).slice(0,5).map(e=><div className="preview" key={e.id}><b>{e.title}</b><span>{dateOnly(e.date)} · {normaliseTime(e.time) || 'Time TBC'}</span><em>{e.athlete_name || athletes.find(a=>a.id===e.athlete_id)?.name || 'Athlete not assigned'}</em></div>)}</div></section>
 }
 
 function AthleteCreator({users,setUsers,athletes,setAthletes}:{users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){
