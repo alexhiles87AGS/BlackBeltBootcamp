@@ -55,3 +55,8 @@ input[type="date"],input[type="time"]{max-width:100%;min-width:0;-webkit-appeara
 /* V2.2.9 workout assignment sync and editable saved workouts */
 .miniGrid{display:grid;grid-template-columns:80px 1fr 1fr;gap:8px;margin-top:8px}.miniGrid label{font-size:.78rem;gap:4px}.miniGrid input{padding:9px 10px;border-radius:10px}.editableExercise{gap:8px}.savedWorkout .actions{margin-top:8px}.scheduleSelf{margin:12px 0 16px}.assignmentList .preview em{color:#b7d2eb}
 @media(max-width:720px){.miniGrid{grid-template-columns:1fr}.savedWorkout .actions{display:grid;grid-template-columns:1fr;gap:8px}.savedWorkout .actions button{width:100%}}
+
+/* V2.2.11 workout completion flow polish */
+.workoutExercise.exerciseCollapsed{background:rgba(9,38,44,.88);border-color:#26d69e;padding:16px 18px}
+.savedExerciseSummary h3{margin:0 0 4px}.savedExerciseSummary p{display:flex;align-items:center;gap:8px;margin:0;color:#b8f7df;font-weight:800}.savedExerciseSummary p svg{color:#28e595}.savedExerciseSummary button{background:#0a1b30;border-color:#28506f}
+@media(max-width:720px){.savedExerciseSummary{display:grid;grid-template-columns:1fr;align-items:start}.savedExerciseSummary button{width:100%;margin-top:10px}.workoutCompletionPanel>.primary.big{width:100%;min-height:52px}}

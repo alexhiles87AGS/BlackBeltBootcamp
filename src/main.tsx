@@ -30,7 +30,7 @@ const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[] 
   { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'] },
 ];
 
-const APP_VERSION = '2.2.9-workout-assignment-sync';
+const APP_VERSION = '2.2.11-completion-flow-fix';
 
 const cleanProfiles: AthleteProfile[] = [
   {
@@ -253,34 +253,76 @@ function mergeUniqueById<T extends {id:string}>(local:T[], remote:T[]){
   return Array.from(map.values());
 }
 
+function remoteAthleteDisplayName(a: any){ return a?.name || a?.full_name || a?.fullName || ''; }
+function remoteAthleteIsActive(a: any){ return a?.is_active === undefined || a?.is_active === null || a?.is_active === true; }
+function mapRemoteAthleteToLocal(a: any): AthleteProfile {
+  const remoteName = remoteAthleteDisplayName(a);
+  if (isCanonicalJamesIdentity(a?.id, a?.email, remoteName)) return cleanProfiles[1];
+  if (normalise(a?.email) === 'alex.hiles.ags@gmail.com' || normalise(remoteName) === 'alex hiles') return cleanProfiles[0];
+  return {
+    id: a?.id,
+    name: remoteName || a?.email || 'Athlete',
+    email: a?.email || '',
+    role: a?.role || 'athlete',
+    age: a?.age,
+    height_cm: a?.height_cm,
+    weight_kg: a?.weight_kg,
+    competition_weight_kg: a?.competition_weight_kg,
+    belt_rank: a?.belt_rank,
+    gym: a?.gym,
+    goal: a?.goal,
+    profile_photo_url: a?.profile_photo_url,
+  } as AthleteProfile;
+}
+
 async function ensureRemoteAthlete(profile: AthleteProfile): Promise<string | null> {
   if (!supabase) return null;
   try {
     const email = profile.email || '';
-    let query = supabase.from('athlete_profiles').select('*').limit(1);
-    if (email) query = query.eq('email', email);
-    else query = query.eq('full_name', profile.name);
-    const { data, error } = await query;
-    if (!error && data && data[0]?.id) return data[0].id;
-    const { data: inserted, error: insertError } = await supabase
+    if (email) {
+      const { data, error } = await supabase.from('athlete_profiles').select('*').eq('email', email).limit(1);
+      if (!error && data && data[0]?.id) return data[0].id;
+    }
+
+    const baseRow = {
+      email: profile.email || null,
+      role: profile.role || 'athlete',
+      age: profile.age || null,
+      height_cm: profile.height_cm || null,
+      weight_kg: profile.weight_kg || null,
+      competition_weight_kg: profile.competition_weight_kg || null,
+      belt_rank: profile.belt_rank || null,
+      gym: profile.gym || null,
+      goal: profile.goal || null,
+    };
+
+    // Support both schema variants used during the project: name and full_name.
+    let insertedId: string | null = null;
+    const nameInsert = await supabase
       .from('athlete_profiles')
-      .insert({
-        full_name: profile.name,
-        email: profile.email || null,
-        age: profile.age || null,
-        height_cm: profile.height_cm || null,
-        weight_kg: profile.weight_kg || null,
-        competition_weight_kg: profile.competition_weight_kg || null,
-        belt_rank: profile.belt_rank || null,
-        gym: profile.gym || null,
-        goal: profile.goal || null,
-        profile_photo_url: profile.profile_photo_url || null,
-        is_active: true,
-      })
+      .insert({ ...baseRow, name: profile.name })
       .select('*')
       .single();
-    if (insertError) throw insertError;
-    return inserted?.id || null;
+
+    if (!nameInsert.error) insertedId = nameInsert.data?.id || null;
+    else {
+      const fullNameInsert = await supabase
+        .from('athlete_profiles')
+        .insert({ ...baseRow, full_name: profile.name, is_active: true, profile_photo_url: profile.profile_photo_url || null })
+        .select('*')
+        .single();
+      if (!fullNameInsert.error) insertedId = fullNameInsert.data?.id || null;
+      else {
+        console.warn('Supabase athlete insert skipped:', nameInsert.error, fullNameInsert.error);
+      }
+    }
+
+    if (insertedId) return insertedId;
+    if (email) {
+      const { data } = await supabase.from('athlete_profiles').select('*').eq('email', email).limit(1);
+      return data?.[0]?.id || null;
+    }
+    return null;
   } catch (err) {
     console.warn('Supabase athlete sync skipped:', err);
     return null;
@@ -350,6 +392,24 @@ async function saveRemoteSession(event: CalendarEvent, plan: WorkoutPlan | undef
   } catch (err) {
     console.warn('Supabase session sync skipped:', err);
     return event;
+  }
+}
+
+
+async function updateRemoteSessionStatus(event: CalendarEvent, status: CalendarEvent['status'], date?: string, time?: string) {
+  if (!supabase || !event.remote_id) return;
+  try {
+    const { error } = await supabase
+      .from('training_sessions')
+      .update({
+        status,
+        session_date: date || event.date,
+        start_time: time || event.time || null,
+      })
+      .eq('id', event.remote_id);
+    if (error) console.warn('Supabase session status update skipped:', error);
+  } catch (err) {
+    console.warn('Supabase session status update skipped:', err);
   }
 }
 
@@ -430,14 +490,16 @@ function App() {
     if (data?.length) setExercises(data as Exercise[]);
 
     try {
-      const { data: remoteAthletes } = await supabase.from('athlete_profiles').select('*').eq('is_active', true);
+      // Ensure the two core profiles exist remotely. This makes trainer-to-athlete assignment reliable across logins/devices.
+      await ensureRemoteAthlete(cleanProfiles[0]);
+      await ensureRemoteAthlete(cleanProfiles[1]);
+
+      const { data: remoteAthletes, error: athleteLoadError } = await supabase.from('athlete_profiles').select('*');
+      if (athleteLoadError) console.warn('Supabase athlete load skipped:', athleteLoadError);
+      const activeRemoteAthletes = (remoteAthletes || []).filter(remoteAthleteIsActive);
       const remoteAthleteMap = new Map<string, any>();
-      (remoteAthletes || []).forEach((a:any)=>remoteAthleteMap.set(a.id, a));
-      const mappedAthletes: AthleteProfile[] = (remoteAthletes || []).map((a:any) => {
-        if (isCanonicalJamesIdentity(a.id, a.email, a.full_name)) return cleanProfiles[1];
-        if (normalise(a.email)==='alex.hiles.ags@gmail.com' || normalise(a.full_name)==='alex hiles') return cleanProfiles[0];
-        return { id:a.id, name:a.full_name, email:a.email, role:'athlete', age:a.age, height_cm:a.height_cm, weight_kg:a.weight_kg, competition_weight_kg:a.competition_weight_kg, belt_rank:a.belt_rank, gym:a.gym, goal:a.goal, profile_photo_url:a.profile_photo_url } as AthleteProfile;
-      });
+      activeRemoteAthletes.forEach((a:any)=>remoteAthleteMap.set(a.id, a));
+      const mappedAthletes: AthleteProfile[] = activeRemoteAthletes.map(mapRemoteAthleteToLocal);
       if (mappedAthletes.length) setAthletes(prev => canonicaliseAthletes(mergeUniqueById(prev, mappedAthletes)));
 
       const { data: remotePlans } = await supabase.from('workout_programmes').select('*').order('created_at', { ascending:false });
@@ -462,15 +524,13 @@ function App() {
       const { data: remoteSessions } = await supabase.from('training_sessions').select('*').order('session_date', { ascending:true });
       const mappedEvents: CalendarEvent[] = (remoteSessions || []).map((e:any)=>{
         const remoteAthlete = remoteAthleteMap.get(e.athlete_id);
-        const athleteProfile = remoteAthlete
-          ? (isCanonicalJamesIdentity(remoteAthlete.id, remoteAthlete.email, remoteAthlete.full_name) ? cleanProfiles[1] : normalise(remoteAthlete.email)==='alex.hiles.ags@gmail.com' || normalise(remoteAthlete.full_name)==='alex hiles' ? cleanProfiles[0] : { id: remoteAthlete.id, name: remoteAthlete.full_name, email: remoteAthlete.email, role:'athlete' } as AthleteProfile)
-          : undefined;
+        const athleteProfile = remoteAthlete ? mapRemoteAthleteToLocal(remoteAthlete) : undefined;
         return {
           id:e.id,
           remote_id:e.id,
           athlete_id:athleteProfile?.id || e.athlete_id,
           athlete_email:athleteProfile?.email || remoteAthlete?.email || undefined,
-          athlete_name:athleteProfile?.name || remoteAthlete?.full_name || undefined,
+          athlete_name:athleteProfile?.name || remoteAthleteDisplayName(remoteAthlete) || undefined,
           workout_plan_id:e.programme_id || undefined,
           remote_plan_id:e.programme_id || undefined,
           date:e.session_date,
@@ -505,13 +565,13 @@ function App() {
   return <div className="appShell">
     <header className="topbar">
       <button className="iconButton" onClick={()=>setDrawerOpen(true)} aria-label="Open menu"><Menu size={24}/></button>
-      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.9</span></div></div>
+      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V2.2.11</span></div></div>
       <div className="topContext"><span>{currentUser.name}</span><em>{titleCase(currentUser.role)}</em></div>
     </header>
 
     {drawerOpen && <div className="drawerBackdrop" onClick={()=>setDrawerOpen(false)} />}
     <aside className={`drawer ${drawerOpen ? 'open' : ''}`}>
-      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.9</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
+      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V2.2.11</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
       <div className="drawerUser"><b>{currentUser.name}</b><span>{currentUser.email}</span><em>{titleCase(currentUser.role)} profile</em></div>
       <nav>{visibleNav.map(n => <button key={n.page} onClick={() => go(n.page)} className={page===n.page?'active':''}>{n.icon}<span>{n.label}</span></button>)}</nav>
       <button className="logoutButton" onClick={handleLogout}><LogOut size={18}/> Sign out</button>
@@ -525,7 +585,7 @@ function App() {
       {page==='builder' && <WorkoutBuilder exercises={exercises} plans={plans} setPlans={setPlans} currentUser={currentUser} athletes={athletes} users={users} events={events} setEvents={setEvents} />}
       {page==='today' && <Today events={visibleEvents} exercises={exercises} logs={logs} setLogs={setLogs} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} openSession={openSession}/>} 
       {page==='calendar' && <TrainingCalendar events={visibleEvents} setEvents={setEvents} openSession={openSession}/>} 
-      {page==='session' && <SessionWorkout session={activeSession} setSession={setActiveSession} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})}/>} 
+      {page==='session' && <SessionWorkout session={activeSession} setSession={setActiveSession} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} onSessionFinished={()=>{ setActiveSession(null); go('dashboard'); }}/>} 
       {page==='fma' && <FmaClasses events={events} setEvents={setEvents} openSession={openSession}/>} 
       {page==='stats' && <Stats logs={logs} events={visibleEvents} profile={profile}/>} 
       {page==='badges' && <Badges badges={liveBadges}/>} 
@@ -643,28 +703,43 @@ function Today({events,exercises,logs,setLogs,onPlay,openSession}:{events:Calend
   return <section className="panel"><div className="row between"><div><h3>Today's Training</h3><p className="muted">Choose a date, open a session, follow the exercises and log completion.</p></div><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>{sessions.length===0 && <p className="muted">No sessions planned for this date.</p>}{sessions.map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}</section>
 }
 
-function SessionWorkout({session,setSession,exercises,plans,logs,setLogs,events,setEvents,onPlay}:{session:CalendarEvent|null; setSession:(s:CalendarEvent|null)=>void; exercises:Exercise[]; plans:WorkoutPlan[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; onPlay:(e:Exercise)=>void}){
+function SessionWorkout({session,setSession,exercises,plans,logs,setLogs,events,setEvents,onPlay,onSessionFinished}:{session:CalendarEvent|null; setSession:(s:CalendarEvent|null)=>void; exercises:Exercise[]; plans:WorkoutPlan[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; onPlay:(e:Exercise)=>void; onSessionFinished:()=>void}){
   const fallback: CalendarEvent = session || { id:'adhoc', date:todayISO(), time:'', title:'Ad hoc Workout', type:'Gym', status:'planned' };
   const isClassSession = !!fallback.class_name || fallback.type === 'FMA';
   if (isClassSession) return <ClassSessionCompletion session={fallback} setSession={setSession} events={events} setEvents={setEvents}/>;
-  return <ExerciseSessionCompletion session={fallback} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} onPlay={onPlay}/>;
+  return <ExerciseSessionCompletion session={fallback} setSession={setSession} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} onPlay={onPlay} onSessionFinished={onSessionFinished}/>;
 }
 
-function ExerciseSessionCompletion({session,exercises,plans,logs,setLogs,events,setEvents,onPlay}:{session:CalendarEvent; exercises:Exercise[]; plans:WorkoutPlan[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; onPlay:(e:Exercise)=>void}){
+function ExerciseSessionCompletion({session,setSession,exercises,plans,logs,setLogs,events,setEvents,onPlay,onSessionFinished}:{session:CalendarEvent; setSession:(s:CalendarEvent|null)=>void; exercises:Exercise[]; plans:WorkoutPlan[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; onPlay:(e:Exercise)=>void; onSessionFinished:()=>void}){
   const plan = plans.find(p=>p.id===session.workout_plan_id);
   const picks = useMemo(()=>getSessionExercises(session, exercises, plans), [session.id, session.workout_plan_id, exercises.length, plans.length]);
   const [date,setDate]=useState(session.date || todayISO());
+  const [savedExercises,setSavedExercises]=useState<Set<string>>(new Set());
   function plannedRows(exerciseId:string){
     const planned = plan?.exercises.find(e=>e.exercise_id===exerciseId);
     const count = Math.max(1, Number(planned?.planned_sets || 3));
     return Array.from({length: count}, (_,i)=>({set_number:i+1,reps: planned?.planned_reps || '',weight: planned?.planned_weight || '',completed:false}));
   }
   const [setRows,setSetRows]=useState<Record<string,ExerciseLogSet[]>>(()=>Object.fromEntries(picks.map(e=>[e.exercise_id,plannedRows(e.exercise_id)])));
-  useEffect(()=>{ setSetRows(Object.fromEntries(picks.map(e=>[e.exercise_id,plannedRows(e.exercise_id)]))); }, [picks.map(p=>p.exercise_id).join('|'), plan?.id]);
+  useEffect(()=>{ setSetRows(Object.fromEntries(picks.map(e=>[e.exercise_id,plannedRows(e.exercise_id)]))); setSavedExercises(new Set()); }, [picks.map(p=>p.exercise_id).join('|'), plan?.id]);
   function updateSet(exId:string, idx:number, field:keyof ExerciseLogSet, value:any){ setSetRows(prev=>({...prev,[exId]:(prev[exId]||[]).map((s,i)=>i===idx?{...s,[field]:value}:s)})); }
-  function completeExercise(e:Exercise, quick=false){ const sets = quick ? [] : (setRows[e.exercise_id] || []); const entry: WorkoutLog = { id:crypto.randomUUID(), session_id:session.id, date, session_type:session.type, exercise_id:e.exercise_id, exercise_name:titleCase(e.name), sets, completed:true, reps: sets.map(s=>s.reps).filter(Boolean).join(', '), weight: sets.map(s=>s.weight).filter(Boolean).join(', ') }; setLogs([entry,...logs]); }
-  function completeSession(){ setEvents(events.map(e=>e.id===session.id?{...e,status:'completed'}:e)); }
-  return <section className="panel workoutCompletionPanel"><div className="sessionHeader"><div><span className={classNameForType(session.type)}>{session.type}</span><h3>{session.time ? `${session.time} · ` : ''}{session.title}</h3><p className="muted">{plan ? `Assigned programme: ${plan.name}. ` : ''}Follow the programme for the selected date. Record sets, reps and weight where useful, or mark each exercise complete without logging numbers.</p></div><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label></div><div className="workoutList">{picks.map(e=><div className="workoutExercise" key={e.exercise_id}><div className="row between"><div><h3>{titleCase(e.name)}</h3><p>{titleCase(bodyOf(e))} · {titleCase(e.target)} · {titleCase(e.equipment)}</p></div><button onClick={()=>onPlay(e)} disabled={!safeVideo(e)}><Video size={16}/>Watch Demo</button></div><InstructionsBlock exercise={e}/><div className="setTable"><div className="setHead"><span>Set</span><span>Reps</span><span>Weight</span><span>Done</span></div>{(setRows[e.exercise_id] || []).map((s,idx)=><div className="setRow" key={s.set_number}><span>{s.set_number}</span><input value={s.reps||''} onChange={ev=>updateSet(e.exercise_id,idx,'reps',ev.target.value)} placeholder="8-12"/><input value={s.weight||''} onChange={ev=>updateSet(e.exercise_id,idx,'weight',ev.target.value)} placeholder="kg"/><input type="checkbox" checked={!!s.completed} onChange={ev=>updateSet(e.exercise_id,idx,'completed',ev.target.checked)}/></div>)}</div><div className="row actions"><button className="primary" onClick={()=>completeExercise(e)}><CheckCircle2 size={16}/>Save exercise log</button><button onClick={()=>completeExercise(e,true)}>Mark complete only</button></div></div>)}</div><button className="primary big" onClick={completeSession}><Trophy size={18}/>Mark session completed</button></section>
+  function completeExercise(e:Exercise, quick=false){
+    const sets = quick ? [] : (setRows[e.exercise_id] || []);
+    const entry: WorkoutLog = { id:crypto.randomUUID(), session_id:session.id, date, session_type:session.type, exercise_id:e.exercise_id, exercise_name:titleCase(e.name), sets, completed:true, reps: sets.map(s=>s.reps).filter(Boolean).join(', '), weight: sets.map(s=>s.weight).filter(Boolean).join(', ') };
+    setLogs([entry,...logs]);
+    setSavedExercises(prev => new Set([...Array.from(prev), e.exercise_id]));
+  }
+  async function completeSession(){
+    const updatedEvents = events.map(e=>e.id===session.id?{...e,date,status:'completed' as const}:e);
+    setEvents(updatedEvents);
+    await updateRemoteSessionStatus(session, 'completed', date, session.time);
+    setSession(null);
+    onSessionFinished();
+  }
+  return <section className="panel workoutCompletionPanel"><div className="sessionHeader"><div><span className={classNameForType(session.type)}>{session.type}</span><h3>{session.time ? `${session.time} · ` : ''}{session.title}</h3><p className="muted">{plan ? `Assigned programme: ${plan.name}. ` : ''}Follow the programme for the selected date. Record sets, reps and weight where useful, or mark each exercise complete without logging numbers.</p></div><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label></div><div className="workoutList">{picks.map(e=>{
+    const saved = savedExercises.has(e.exercise_id);
+    return <div className={`workoutExercise ${saved ? 'exerciseCollapsed' : ''}`} key={e.exercise_id}>{saved ? <div className="row between savedExerciseSummary"><div><h3>{titleCase(e.name)}</h3><p><CheckCircle2 size={16}/>Exercise log saved</p></div><button onClick={()=>setSavedExercises(prev=>{ const next=new Set(prev); next.delete(e.exercise_id); return next; })}>Reopen</button></div> : <><div className="row between"><div><h3>{titleCase(e.name)}</h3><p>{titleCase(bodyOf(e))} · {titleCase(e.target)} · {titleCase(e.equipment)}</p></div><button onClick={()=>onPlay(e)} disabled={!safeVideo(e)}><Video size={16}/>Watch Demo</button></div><InstructionsBlock exercise={e}/><div className="setTable"><div className="setHead"><span>Set</span><span>Reps</span><span>Weight</span><span>Done</span></div>{(setRows[e.exercise_id] || []).map((s,idx)=><div className="setRow" key={s.set_number}><span>{s.set_number}</span><input value={s.reps||''} onChange={ev=>updateSet(e.exercise_id,idx,'reps',ev.target.value)} placeholder="8-12"/><input value={s.weight||''} onChange={ev=>updateSet(e.exercise_id,idx,'weight',ev.target.value)} placeholder="kg"/><input type="checkbox" checked={!!s.completed} onChange={ev=>updateSet(e.exercise_id,idx,'completed',ev.target.checked)}/></div>)}</div><div className="row actions"><button className="primary" onClick={()=>completeExercise(e)}><CheckCircle2 size={16}/>Save exercise log</button><button onClick={()=>completeExercise(e,true)}>Mark complete only</button></div></> }</div>
+  })}</div><button className="primary big" onClick={completeSession}><Trophy size={18}/>Mark session completed</button></section>
 }
 
 function ClassSessionCompletion({session,setSession,events,setEvents}:{session:CalendarEvent; setSession:(s:CalendarEvent|null)=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void}){
@@ -838,6 +913,7 @@ function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:Workou
     const athlete = athleteOptions.find(a=>a.id===athleteId);
     if(!plan || !athlete){ setStatus('Create a saved programme and profile before assigning.'); return; }
     const assigned = resolveAssignmentProfile(athlete, users, athletes);
+    const assignedProfile: AthleteProfile = { ...athlete, id: assigned.id, name: assigned.name, email: assigned.email || athlete.email };
     const event: CalendarEvent = {
       id: crypto.randomUUID(),
       athlete_id: assigned.id,
@@ -852,7 +928,7 @@ function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:Workou
       status: 'planned',
     };
     setStatus('Pushing workout to selected profile...');
-    const remoteSynced = await saveRemoteSession(event, plan, athlete);
+    const remoteSynced = await saveRemoteSession(event, plan, assignedProfile);
     const nextEvents = [remoteSynced, ...events.filter(e => e.id !== remoteSynced.id && e.remote_id !== remoteSynced.remote_id)];
     setEvents(nextEvents);
     setStorage('bbb_events', nextEvents);

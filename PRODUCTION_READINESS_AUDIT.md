@@ -1,21 +1,21 @@
-# Production Readiness Audit — V2.2.9
+# Production Readiness Audit — V2.2.11
 
-## Status
+## Build status
 
-Build tested successfully with `npm run build`.
+Production build completed successfully with `npm run build`.
 
-## Fixed in this patch
+## Change scope
 
-- Workout assignment target mismatch.
-- Duplicate/local profile confusion by continuing canonical Alex and James profiles.
-- Admin assignment pick list now includes both Alex Hiles and James Hiles.
-- Athlete self-scheduling from Workout Builder.
-- Saved workout viewing and editing.
-- Supabase sync for training sessions and programme assignments where the existing V2.2 schema is present.
-- Quick Exercise Completion remains removed from Today's Training.
+This is a focused behavioural patch only. It does not alter the exercise library, FMA class session model, dashboard layout, or workout assignment structure from V2.2.10.
 
-## Remaining future hardening
+## Fixes added
 
-- Replace local fallback login with full Supabase Auth-only login.
-- Tighten RLS policies before wider public use.
-- Add automated tests for assignment and calendar visibility.
+1. Exercise cards collapse after the athlete saves an exercise log.
+2. Exercise cards also collapse when the athlete uses Mark Complete Only.
+3. Collapsed exercises show a saved confirmation and can be reopened.
+4. Mark Session Completed closes the workout session and returns the athlete to Dashboard.
+5. Session status update is attempted in Supabase for remotely assigned sessions.
+
+## Supabase
+
+No schema changes are required.
