@@ -1,32 +1,26 @@
-# V3 Production Readiness Audit
+# Production Readiness Audit — V2.2.14 Achievement Manager
 
-## Status
+Build target: private beta for Alex Hiles and James Hiles.
 
-BlackBeltBootcamp V3 is a major architecture upgrade focused on cloud sync and Supabase Auth.
+## Added in this patch
 
-## Completed
+- Admin Console Achievement Manager.
+- Supported achievement counters only, so badge progress can be calculated reliably.
+- Supabase badge sync with local fallback.
+- Optional RLS/policy SQL for remote badge management.
 
-- Production build passes with `npm run build`.
-- Supabase Auth login flow added.
-- Password reset flow added.
-- Local/fallback login route removed from the login screen.
-- Remote loading added for workouts, sessions, logs, metrics, badges, athlete profiles and dashboard settings.
-- Admin Console reorganised into tabbed sections.
-- Achievement Manager retained and cloud-backed.
-- Calendar navigation added.
-- Workout Builder improved with demo preview and ordering.
-- Athlete review and workout results review added for Admin.
+## Retained
 
-## Required before live use
+- GMT/date-safe calendar logic.
+- Workout assignment to athlete profiles.
+- Workout completion flow.
+- Admin diary and deletion tools.
+- FMA class-session behaviour.
 
-1. Deploy V3 code.
-2. Run `supabase/schema_v3_cloud_sync_auth.sql`.
-3. Create Supabase Auth users for Alex and James.
-4. Run `supabase/schema_v3_cloud_sync_auth.sql` again to link Auth IDs.
-5. Test login on two devices.
-6. Test creating a workout as Alex and assigning it to James.
-7. Test James completing a workout and Alex reviewing the result.
 
-## Known design note
+## V3.0.1 Badge + Weight Preference Patch
 
-The app still uses browser local storage as a cache so the UI remains responsive and resilient, but all important data should now be loaded from and saved to Supabase where the V3 schema is installed correctly.
+- Achievement Manager now treats Supabase as the source of truth, including inactive achievements, so deleted/deactivated badges should not immediately reappear from local seed data.
+- Deleted badges are tombstoned locally to stop old seeded badges returning.
+- Body weight can now be entered/displayed in kilograms or stone/pounds as a profile preference.
+- Optional SQL: `supabase/schema_v301_badges_weight_preferences.sql` adds the `weight_unit` profile column and refreshes badge RLS/delete/update policies.

@@ -1,39 +1,15 @@
-# BlackBeltBootcamp V3.0 — Cloud Sync + Supabase Auth
+# BlackBeltBootcamp V2.2.14 — Achievement Manager
 
-This V3 package upgrades BlackBeltBootcamp from a strong single-device/private-beta app into a cloud-synced training platform designed to work across Alex and James's devices.
+This package builds on the final working V2.2.13 app and adds the Admin Console Achievement Manager.
 
-## Major upgrades
+## Included
 
-- Supabase Auth login replaces the local/fallback password system.
-- Password reset is available from the login screen.
-- Profiles, diary sessions, saved workouts, workout logs, athlete metrics, FMA classes, badges and dashboard focus text are designed to sync via Supabase.
-- Admin Console now has its own internal menu/tabs to reduce clutter.
-- Admin can review athlete profiles, diary, missed sessions, completed exercises, weights/reps/sets and skipped sets.
-- Dashboard shows nearest achievements to completion first.
-- Achievement Manager saves to Supabase so changes can appear on James's device after reload/login.
-- Training Calendar defaults to the current week and allows previous/next week navigation.
-- Exercise Library now supports body-part and muscle/target filtering.
-- Manual exercise creation includes Full Body as a body part/target focus.
-- Workout Builder supports exercise demo preview, exercise reordering, saved workout editing, and athlete-specific copies.
-- Athlete Profile now includes weight logging and Progress Stats displays weight trends.
-- Profile is opened by clicking the user profile box in the hamburger menu.
-
-## Required Supabase step
-
-Run this file once in Supabase SQL Editor:
-
-```text
-supabase/schema_v3_cloud_sync_auth.sql
-```
-
-Then create Supabase Auth users for:
-
-```text
-alex.hiles.ags@gmail.com
-james.hiles@blackbeltbootcamp.app
-```
-
-After the Auth users exist, run the same SQL file one more time. This links the Auth users to the app profiles and roles.
+- Achievement Manager added to Admin Console.
+- Create, edit, deactivate and delete badges from the app.
+- Fixed achievement type list so counters work automatically.
+- Badges can sync to Supabase when the `badges` table and policies allow insert/update/delete.
+- Local fallback remains available if Supabase badge write is blocked.
+- Existing workout assignment, GMT calendar, clean-start and admin deletion fixes retained.
 
 ## Deployment
 
@@ -41,10 +17,18 @@ After the Auth users exist, run the same SQL file one more time. This links the 
 npm install
 npm run build
 git add .
-git commit -m "Upgrade to BlackBeltBootcamp V3 cloud sync auth"
+git commit -m "Add admin achievement manager"
 git push
 ```
 
-## Notes
+## Optional Supabase SQL
 
-This version keeps a local cache for offline resilience, but Supabase is now the intended source of truth. New devices should load data from Supabase after login.
+Run `supabase/schema_v2214_badge_manager.sql` only if Achievement Manager changes do not persist to Supabase.
+
+
+## V3.0.1 Badge + Weight Preference Patch
+
+- Achievement Manager now treats Supabase as the source of truth, including inactive achievements, so deleted/deactivated badges should not immediately reappear from local seed data.
+- Deleted badges are tombstoned locally to stop old seeded badges returning.
+- Body weight can now be entered/displayed in kilograms or stone/pounds as a profile preference.
+- Optional SQL: `supabase/schema_v301_badges_weight_preferences.sql` adds the `weight_unit` profile column and refreshes badge RLS/delete/update policies.

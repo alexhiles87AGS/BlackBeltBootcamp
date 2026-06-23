@@ -40,6 +40,7 @@ const cleanProfiles: AthleteProfile[] = [
     role: 'admin',
     gym: 'BlackBeltBootcamp',
     goal: 'Manage James’s training platform, programmes and progress.',
+    weight_unit: 'kg',
   },
   {
     id: 'james-athlete',
@@ -53,6 +54,7 @@ const cleanProfiles: AthleteProfile[] = [
     gym: 'FMA Chester',
     goal: 'Build complete MMA athleticism and long-term professional fighter habits.',
     competition_weight_kg: 66,
+    weight_unit: 'kg',
   },
 ];
 
@@ -135,6 +137,13 @@ function sentence(v?: string | null){ const s = (v || '').trim(); return s ? s.c
 function bodyOf(e: Exercise){ return e.body_part || e.body_parts || 'general'; }
 function safeVideo(e: Exercise){ return e.video_url || buildVideoUrl(e.video_path); }
 function bmi(profile: AthleteProfile){ if(!profile.height_cm || !profile.weight_kg) return ''; const m = profile.height_cm/100; return (profile.weight_kg/(m*m)).toFixed(1); }
+type WeightUnit = 'kg' | 'st';
+const POUNDS_PER_KG = 2.2046226218;
+function getWeightUnit(profile?: AthleteProfile | null): WeightUnit { return (profile?.weight_unit === 'st' || storage<WeightUnit>('bbb_weight_unit', 'kg') === 'st') ? 'st' : 'kg'; }
+function kgToStLb(kg?: number | null) { const totalLb = Math.max(0, Number(kg || 0) * POUNDS_PER_KG); const st = Math.floor(totalLb / 14); const lb = Math.round((totalLb - st * 14) * 10) / 10; return { st, lb }; }
+function stLbToKg(st?: number | string, lb?: number | string) { const stones = Number(st || 0); const pounds = Number(lb || 0); return Math.round(((stones * 14) + pounds) / POUNDS_PER_KG * 10) / 10; }
+function kgToStoneDecimal(kg?: number | null) { return Math.round((Number(kg || 0) * POUNDS_PER_KG / 14) * 100) / 100; }
+function formatWeight(kg?: number | null, unit: WeightUnit = 'kg') { if (!kg) return '—'; if (unit === 'st') { const { st, lb } = kgToStLb(kg); return `${st}st ${lb}lb`; } return `${Number(kg).toFixed(1).replace(/\.0$/, '')}kg`; }
 function classNameForType(type?: string){ return `typeBadge type-${(type||'general').toLowerCase().replace(/\s+/g,'-')}`; }
 function normalise(v?: string | null){ return (v || '').trim().toLowerCase(); }
 function findLinkedAthleteUser(profile: AthleteProfile, users: AppUser[]){
@@ -321,6 +330,7 @@ function mapRemoteAthleteToLocal(a: any): AthleteProfile {
     gym: a?.gym,
     goal: a?.goal,
     profile_photo_url: a?.profile_photo_url,
+    weight_unit: a?.weight_unit === 'st' ? 'st' : 'kg',
   } as AthleteProfile;
 }
 
@@ -353,11 +363,18 @@ function normaliseBadgeDefinition(b: BadgeDefinition): BadgeDefinition {
     is_active: b.is_active !== false,
   };
 }
+function badgeStableKey(b: Pick<BadgeDefinition, 'name' | 'badge_type' | 'target_value'>) { return `${normalise(b.name)}|${b.badge_type}|${b.target_value}`; }
+function getBadgeTombstones(): string[] { return storage<string[]>('bbb_deleted_badges', []); }
+function setBadgeTombstones(keys: string[]) { setStorage('bbb_deleted_badges', Array.from(new Set(keys))); }
+function isBadgeTombstoned(b: BadgeDefinition) { const keys = getBadgeTombstones(); return keys.includes(b.remote_id || '') || keys.includes(b.id || '') || keys.includes(badgeStableKey(b)); }
+function addBadgeTombstone(b: BadgeDefinition) { setBadgeTombstones([...getBadgeTombstones(), b.remote_id || '', b.id || '', badgeStableKey(b)].filter(Boolean)); }
+function clearBadgeTombstone(b: BadgeDefinition) { const remove = new Set([b.remote_id || '', b.id || '', badgeStableKey(b)].filter(Boolean)); setBadgeTombstones(getBadgeTombstones().filter(k => !remove.has(k))); }
 function mergeBadgeDefinitions(local: BadgeDefinition[], remote: BadgeDefinition[]) {
   const map = new Map<string, BadgeDefinition>();
   [...local, ...remote].forEach(raw => {
     const b = normaliseBadgeDefinition(raw);
-    const key = `${normalise(b.name)}|${b.badge_type}|${b.target_value}`;
+    if (isBadgeTombstoned(b)) return;
+    const key = badgeStableKey(b);
     const existing = map.get(key);
     map.set(key, existing ? { ...existing, ...b, icon: b.icon || existing.icon || '🏅' } : b);
   });
@@ -381,13 +398,16 @@ async function saveRemoteBadgeDefinition(def: BadgeDefinition): Promise<BadgeDef
     };
     const { data, error } = await supabase.from('badges').upsert(row, { onConflict: 'id' }).select('*').single();
     if (error) throw error;
-    return mapRemoteBadgeToLocal(data || row);
+    const saved = mapRemoteBadgeToLocal(data || row);
+    clearBadgeTombstone(saved);
+    return saved;
   } catch (err) {
     console.warn('Supabase badge save skipped:', err);
     return normalised;
   }
 }
 async function deleteRemoteBadgeDefinition(def: BadgeDefinition): Promise<boolean> {
+  addBadgeTombstone(def);
   if (!supabase) return true;
   const remoteId = def.remote_id || def.id;
   if (!isUuid(remoteId)) return true;
@@ -396,8 +416,14 @@ async function deleteRemoteBadgeDefinition(def: BadgeDefinition): Promise<boolea
     if (error) throw error;
     return true;
   } catch (err) {
-    console.warn('Supabase badge delete skipped:', err);
-    return false;
+    console.warn('Supabase badge hard delete skipped, attempting soft deactivate:', err);
+    try {
+      await supabase.from('badges').update({ is_active:false, updated_at:new Date().toISOString() }).eq('id', remoteId);
+      return true;
+    } catch (softErr) {
+      console.warn('Supabase badge soft delete skipped:', softErr);
+      return true;
+    }
   }
 }
 
@@ -614,9 +640,16 @@ async function saveRemoteProfile(profile: AthleteProfile) {
       gym: profile.gym || null,
       goal: profile.goal || null,
       profile_photo_url: profile.profile_photo_url || null,
+      weight_unit: getWeightUnit(profile),
       updated_at: new Date().toISOString(),
     };
-    await supabase.from('athlete_profiles').update(row).eq('id', remoteId);
+    const { error } = await supabase.from('athlete_profiles').update(row).eq('id', remoteId);
+    if (error && /weight_unit/i.test(error.message || '')) {
+      const { weight_unit, ...fallbackRow } = row;
+      await supabase.from('athlete_profiles').update(fallbackRow).eq('id', remoteId);
+    } else if (error) {
+      throw error;
+    }
     return { ...profile, remote_id: remoteId };
   } catch (err) { console.warn('Supabase profile save skipped:', err); return profile; }
 }
@@ -679,11 +712,16 @@ async function createRemoteAthleteProfile(profile: AthleteProfile) {
       belt_rank: profile.belt_rank || null,
       gym: profile.gym || null,
       goal: profile.goal || null,
+      weight_unit: getWeightUnit(profile),
       is_active: true,
     };
-    const { data, error } = await supabase.from('athlete_profiles').insert(row).select('*').single();
-    if (error) throw error;
-    return mapRemoteAthleteToLocal(data);
+    let result = await supabase.from('athlete_profiles').insert(row).select('*').single();
+    if (result.error && /weight_unit/i.test(result.error.message || '')) {
+      const { weight_unit, ...fallbackRow } = row;
+      result = await supabase.from('athlete_profiles').insert(fallbackRow).select('*').single();
+    }
+    if (result.error) throw result.error;
+    return mapRemoteAthleteToLocal(result.data);
   } catch (err) { console.warn('Supabase athlete create skipped:', err); return profile; }
 }
 
@@ -821,10 +859,12 @@ function App() {
 
     try {
       const { data: remoteBadges, error: remoteBadgeError } = await supabase.from('badges').select('*').order('created_at', { ascending:true });
-      if (!remoteBadgeError && remoteBadges?.length) {
-        const mappedBadges = remoteBadges.map(mapRemoteBadgeToLocal).filter(b => b.is_active !== false);
-        setBadgeDefinitions(prev => mergeBadgeDefinitions(prev, mappedBadges));
-      } else if (remoteBadgeError) {
+      if (!remoteBadgeError) {
+        const mappedBadges = (remoteBadges || []).map(mapRemoteBadgeToLocal).filter(b => !isBadgeTombstoned(b));
+        // Supabase is the source of truth for achievements once V3 is enabled.
+        // This prevents deleted or deactivated achievements from reappearing from local seed data.
+        setBadgeDefinitions(mergeBadgeDefinitions([], mappedBadges));
+      } else {
         console.warn('Supabase badge load skipped:', remoteBadgeError);
       }
     } catch (err) {
@@ -1272,14 +1312,15 @@ function FmaClasses({events,setEvents,openSession,profile}:{events:CalendarEvent
 }
 
 function Stats({logs,events,profile,metrics}:{logs:WorkoutLog[];events:CalendarEvent[];profile:AthleteProfile;metrics:AthleteMetric[]}){
+  const weightUnit = getWeightUnit(profile);
   const completedSessions=events.filter(e=>e.status==='completed').length; const completedExercises=logs.filter(l=>l.completed).length; const streak=calcStreak(logs,events);
   const byType=sessionTypes.map(t=>({type:t,count:events.filter(e=>e.status==='completed'&&e.type===t).length})).filter(x=>x.count>0);
   const weekly=last14Days().map(d=>({date:d.slice(5),sessions:events.filter(e=>e.status==='completed'&&dateOnly(e.date)===d).length,exercises:logs.filter(l=>dateOnly(l.date)===d).length}));
   const athleteMetrics = metrics.filter(m=>m.athlete_id===profile.remote_id || m.athlete_id===profile.id).sort((a,b)=>dateOnly(a.metric_date).localeCompare(dateOnly(b.metric_date)));
-  const weightTrend = athleteMetrics.map(m=>({date:dateOnly(m.metric_date).slice(5),weight:Number(m.weight_kg || 0)})).filter(m=>m.weight>0);
+  const weightTrend = athleteMetrics.map(m=>({date:dateOnly(m.metric_date).slice(5),weight: weightUnit === 'st' ? kgToStoneDecimal(m.weight_kg) : Number(m.weight_kg || 0)})).filter(m=>m.weight>0);
   const missed=events.filter(e=>e.status==='missed').length;
   const skippedSets=logs.flatMap(l=>l.sets||[]).filter(s=>s.completed===false).length;
-  return <div><div className="kpiRow statsKpis"><Kpi label="Sessions Completed" value={completedSessions}/><Kpi label="Exercises Completed" value={completedExercises}/><Kpi label="Workout Streak" value={`${streak} days`}/><Kpi label="Missed Sessions" value={missed}/><Kpi label="Skipped Sets" value={skippedSets}/><Kpi label="Current Weight" value={profile.weight_kg ? `${profile.weight_kg}kg` : '—'}/></div><section className="panel"><h3>Training Volume</h3><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={weekly}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip/><Bar dataKey="sessions"/><Bar dataKey="exercises"/></BarChart></ResponsiveContainer></div></section>{weightTrend.length>0 && <section className="panel"><h3>Weight Trend</h3><p className="muted">Tracks logged body weight changes over time.</p><div className="chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={weightTrend}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip/><Line type="monotone" dataKey="weight"/></LineChart></ResponsiveContainer></div></section>}<section className="panel"><h3>This Week By Session Type</h3><div className="typeCountGrid">{byType.length===0?<p className="muted">No completed sessions yet.</p>:byType.map(t=><div className="typeCount" key={t.type}><span>{t.type}</span><b>{t.count}</b></div>)}</div></section></div>
+  return <div><div className="kpiRow statsKpis"><Kpi label="Sessions Completed" value={completedSessions}/><Kpi label="Exercises Completed" value={completedExercises}/><Kpi label="Workout Streak" value={`${streak} days`}/><Kpi label="Missed Sessions" value={missed}/><Kpi label="Skipped Sets" value={skippedSets}/><Kpi label="Current Weight" value={formatWeight(profile.weight_kg, weightUnit)}/></div><section className="panel"><h3>Training Volume</h3><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={weekly}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip/><Bar dataKey="sessions"/><Bar dataKey="exercises"/></BarChart></ResponsiveContainer></div></section>{weightTrend.length>0 && <section className="panel"><h3>Weight Trend ({weightUnit === 'st' ? 'stone' : 'kg'})</h3><p className="muted">Tracks logged body weight changes over time using your profile preference.</p><div className="chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={weightTrend}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip/><Line type="monotone" dataKey="weight"/></LineChart></ResponsiveContainer></div></section>}<section className="panel"><h3>This Week By Session Type</h3><div className="typeCountGrid">{byType.length===0?<p className="muted">No completed sessions yet.</p>:byType.map(t=><div className="typeCount" key={t.type}><span>{t.type}</span><b>{t.count}</b></div>)}</div></section></div>
 }
 function achievementCount(type: AchievementType, logs: WorkoutLog[], events: CalendarEvent[]) {
   const completedSessions = events.filter(e=>e.status==='completed');
@@ -1314,18 +1355,27 @@ function buildBadges(logs:WorkoutLog[], events:CalendarEvent[], definitions:Badg
 
 function Badges({badges}:{badges:Badge[]}){ return <section className="panel"><h3>Achievements</h3><p className="muted">Counters update from completed sessions, FMA attendance and exercise logs. New achievements can now be managed from the Admin Console.</p><div className="badgeGrid">{badges.map(b=><div className={`badgeCard ${b.unlocked?'unlocked':''}`} key={b.id}><span>{b.icon}</span><h3>{b.name}</h3><p>{b.description}</p><div className="progress"><i style={{width:`${b.progress}%`}}/></div><em>{b.current_count} / {b.target_value} · {b.progress}% complete{b.xp_value ? ` · ${b.xp_value} XP` : ''}</em></div>)}</div></section> }
 function Profile({profile,metrics,setMetrics,setProfile}:{profile:AthleteProfile;metrics:AthleteMetric[];setMetrics:(m:AthleteMetric[])=>void;setProfile:(p:AthleteProfile)=>void}){
+  const [weightUnit,setWeightUnit]=useState<WeightUnit>(getWeightUnit(profile));
+  const initialParts = kgToStLb(profile.weight_kg);
   const [weight,setWeight]=useState(String(profile.weight_kg || ''));
+  const [weightSt,setWeightSt]=useState(String(initialParts.st || ''));
+  const [weightLb,setWeightLb]=useState(String(initialParts.lb || ''));
   const [weightNotes,setWeightNotes]=useState('');
   function upd(k:keyof AthleteProfile,v:any){ setProfile({...profile,[k]:v}); }
+  function setPreferredUnit(unit: WeightUnit){ setWeightUnit(unit); setStorage('bbb_weight_unit', unit); setProfile({...profile, weight_unit:unit}); }
+  function updateKgWeight(v:string){ setWeight(v); upd('weight_kg', Number(v)); }
+  function updateStoneWeight(nextSt=weightSt,nextLb=weightLb){ setWeightSt(nextSt); setWeightLb(nextLb); const kg = stLbToKg(nextSt, nextLb); upd('weight_kg', kg); setWeight(String(kg)); }
   const athleteMetrics = metrics.filter(m=>m.athlete_id===profile.remote_id || m.athlete_id===profile.id).sort((a,b)=>dateOnly(a.metric_date).localeCompare(dateOnly(b.metric_date)));
   async function logWeight(){
-    const metric: AthleteMetric = { id:crypto.randomUUID(), athlete_id: profile.remote_id || profile.id, metric_date: todayISO(), weight_kg:Number(weight), height_cm: profile.height_cm, notes: weightNotes };
+    const weightKg = weightUnit === 'st' ? stLbToKg(weightSt, weightLb) : Number(weight);
+    const metric: AthleteMetric = { id:crypto.randomUUID(), athlete_id: profile.remote_id || profile.id, metric_date: todayISO(), weight_kg: weightKg, height_cm: profile.height_cm, notes: weightNotes };
     const saved = await saveRemoteMetric(metric);
     setMetrics([...metrics, saved]);
-    upd('weight_kg', Number(weight));
+    setProfile({...profile, weight_kg: weightKg, weight_unit: weightUnit});
+    setWeight(String(weightKg));
     setWeightNotes('');
   }
-  return <section className="panel profilePage"><h3>Athlete Profile</h3><p className="muted">These details personalise targets, competition planning and progress tracking.</p><div className="grid three"><Field label="Athlete Name" help="Shown throughout the app." value={profile.name} onChange={v=>upd('name',v)}/><Field label="Age" help="Current age in years." value={profile.age||''} type="number" onChange={v=>upd('age',Number(v))}/><Field label="Gym / Academy" help="Primary training location." value={profile.gym||''} onChange={v=>upd('gym',v)}/><Field label="Height (cm)" help="Used for weight trend context." value={profile.height_cm||''} type="number" onChange={v=>upd('height_cm',Number(v))}/><Field label="Current Weight (kg)" help="Snapshot weight. Use the log section below to track changes over time." value={profile.weight_kg||''} type="number" onChange={v=>{upd('weight_kg',Number(v));setWeight(v);}}/><Field label="Competition Weight (kg)" help="Target fight or competition weight." value={profile.competition_weight_kg||''} type="number" onChange={v=>upd('competition_weight_kg',Number(v))}/><Field label="Belt Rank" help="Current martial arts rank." value={profile.belt_rank||''} onChange={v=>upd('belt_rank',v)}/><Field label="Profile Photo URL" help="Optional image link for later use." value={profile.profile_photo_url||''} onChange={v=>upd('profile_photo_url',v)}/></div><label className="fullLabel">Athlete Goal<span>Main training objective.</span><textarea value={profile.goal||''} onChange={e=>upd('goal',e.target.value)}/></label><section className="panel inner weightLogger"><h3>Weight Tracker</h3><p className="muted">Log changes in body weight so progress stats show trends rather than only snapshots.</p><div className="grid three"><label>Weight today (kg)<input type="number" value={weight} onChange={e=>setWeight(e.target.value)}/></label><label className="fullSpan">Notes<input value={weightNotes} onChange={e=>setWeightNotes(e.target.value)} placeholder="Optional note"/></label></div><div className="formActions"><button className="primary" onClick={logWeight} disabled={!weight}><Save size={16}/>Log weight</button></div>{athleteMetrics.length>0 && <div className="miniHistory">{athleteMetrics.slice(-6).reverse().map(m=><div className="preview" key={m.id}><b>{dateOnly(m.metric_date)} · {m.weight_kg || '—'}kg</b><span>{m.notes || 'Weight logged'}</span></div>)}</div>}</section></section>
+  return <section className="panel profilePage"><h3>Athlete Profile</h3><p className="muted">These details personalise targets, competition planning and progress tracking.</p><div className="grid three"><Field label="Athlete Name" help="Shown throughout the app." value={profile.name} onChange={v=>upd('name',v)}/><Field label="Age" help="Current age in years." value={profile.age||''} type="number" onChange={v=>upd('age',Number(v))}/><Field label="Gym / Academy" help="Primary training location." value={profile.gym||''} onChange={v=>upd('gym',v)}/><Field label="Height (cm)" help="Used for weight trend context." value={profile.height_cm||''} type="number" onChange={v=>upd('height_cm',Number(v))}/><label className="fieldLabel">Weight Preference<span>Choose how body weight is entered and displayed.</span><select value={weightUnit} onChange={e=>setPreferredUnit(e.target.value as WeightUnit)}><option value="kg">Kilograms (kg)</option><option value="st">Stone / pounds (st, lb)</option></select></label>{weightUnit==='kg' ? <Field label="Current Weight (kg)" help="Snapshot weight. Use the log section below to track changes over time." value={profile.weight_kg||''} type="number" onChange={updateKgWeight}/> : <label className="fieldLabel">Current Weight (st/lb)<span>Enter stones and pounds. The app stores the converted kg value for syncing.</span><div className="miniGrid"><input type="number" value={weightSt} onChange={e=>updateStoneWeight(e.target.value, weightLb)} placeholder="st"/><input type="number" value={weightLb} onChange={e=>updateStoneWeight(weightSt, e.target.value)} placeholder="lb"/></div></label>}<Field label="Competition Weight (kg)" help="Target fight or competition weight." value={profile.competition_weight_kg||''} type="number" onChange={v=>upd('competition_weight_kg',Number(v))}/><Field label="Belt Rank" help="Current martial arts rank." value={profile.belt_rank||''} onChange={v=>upd('belt_rank',v)}/><Field label="Profile Photo URL" help="Optional image link for later use." value={profile.profile_photo_url||''} onChange={v=>upd('profile_photo_url',v)}/></div><label className="fullLabel">Athlete Goal<span>Main training objective.</span><textarea value={profile.goal||''} onChange={e=>upd('goal',e.target.value)}/></label><section className="panel inner weightLogger"><h3>Weight Tracker</h3><p className="muted">Log changes in body weight so progress stats show trends rather than only snapshots.</p><div className="grid three">{weightUnit==='kg' ? <label>Weight today (kg)<input type="number" value={weight} onChange={e=>setWeight(e.target.value)}/></label> : <><label>Weight today (st)<input type="number" value={weightSt} onChange={e=>setWeightSt(e.target.value)}/></label><label>Weight today (lb)<input type="number" value={weightLb} onChange={e=>setWeightLb(e.target.value)}/></label></>}<label className="fullSpan">Notes<input value={weightNotes} onChange={e=>setWeightNotes(e.target.value)} placeholder="Optional note"/></label></div><div className="formActions"><button className="primary" onClick={logWeight} disabled={weightUnit==='kg' ? !weight : (!weightSt && !weightLb)}><Save size={16}/>Log weight</button></div>{athleteMetrics.length>0 && <div className="miniHistory">{athleteMetrics.slice(-6).reverse().map(m=><div className="preview" key={m.id}><b>{dateOnly(m.metric_date)} · {formatWeight(m.weight_kg, weightUnit)}</b><span>{m.notes || 'Weight logged'}</span></div>)}</div>}</section></section>
 }
 function Field({label,help,value,onChange,type='text'}:{label:string;help:string;value:any;type?:string;onChange:(v:string)=>void}){ return <label className="fieldLabel">{label}<span>{help}</span><input type={type} value={value} onChange={e=>onChange(e.target.value)}/></label> }
 
@@ -1349,7 +1399,7 @@ function AdminAthleteProfile({events,logs,metrics,athletes,users}:{events:Calend
   const diary=athlete?events.filter(e=>eventMatchesAthlete(e,athlete,users)):[]; const completed=diary.filter(e=>e.status==='completed'); const missed=diary.filter(e=>e.status==='missed');
   const linkedUser=athlete?findLinkedAthleteUser(athlete,users):undefined; const athleteLogs=logs.filter(l=>!l.session_id || diary.some(e=>e.id===l.session_id || e.remote_id===l.session_id));
   const athleteMetrics=athlete?metrics.filter(m=>m.athlete_id===athlete.id || m.athlete_id===athlete.remote_id):[];
-  return <section className="panel"><div className="row between"><div><h3>Athlete Profile Review</h3><p className="muted">Consolidated athlete view so admin can review one athlete without mixing in other users.</p></div><label>View Athlete<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{opts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label></div>{athlete && <><div className="grid three"><Kpi label="Profile" value={athlete.name}/><Kpi label="Completed" value={completed.length}/><Kpi label="Missed" value={missed.length}/><Kpi label="Exercises Logged" value={athleteLogs.length}/><Kpi label="Current Weight" value={athlete.weight_kg?`${athlete.weight_kg}kg`:'—'}/><Kpi label="Login Email" value={linkedUser?.email||athlete.email||'—'}/></div><div className="preview"><b>{athlete.gym || 'No gym set'}</b><span>{athlete.goal || 'No goal set'}</span><em>{athlete.belt_rank || 'No rank set'} · Target {athlete.competition_weight_kg || '—'}kg</em></div>{athleteMetrics.length>0 && <div className="preview"><b>Weight History</b><span>{athleteMetrics.slice(-5).map(m=>`${dateOnly(m.metric_date)}: ${m.weight_kg}kg`).join(' · ')}</span></div>}</>}</section>
+  return <section className="panel"><div className="row between"><div><h3>Athlete Profile Review</h3><p className="muted">Consolidated athlete view so admin can review one athlete without mixing in other users.</p></div><label>View Athlete<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{opts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label></div>{athlete && <><div className="grid three"><Kpi label="Profile" value={athlete.name}/><Kpi label="Completed" value={completed.length}/><Kpi label="Missed" value={missed.length}/><Kpi label="Exercises Logged" value={athleteLogs.length}/><Kpi label="Current Weight" value={formatWeight(athlete.weight_kg, getWeightUnit(athlete))}/><Kpi label="Login Email" value={linkedUser?.email||athlete.email||'—'}/></div><div className="preview"><b>{athlete.gym || 'No gym set'}</b><span>{athlete.goal || 'No goal set'}</span><em>{athlete.belt_rank || 'No rank set'} · Target {athlete.competition_weight_kg || '—'}kg</em></div>{athleteMetrics.length>0 && <div className="preview"><b>Weight History</b><span>{athleteMetrics.slice(-5).map(m=>`${dateOnly(m.metric_date)}: ${formatWeight(m.weight_kg, getWeightUnit(athlete))}`).join(' · ')}</span></div>}</>}</section>
 }
 
 function AdminWorkoutReview({events,logs,athletes,users}:{events:CalendarEvent[];logs:WorkoutLog[];athletes:AthleteProfile[];users:AppUser[]}){
@@ -1397,6 +1447,7 @@ function AchievementManager({badges,setBadges}:{badges:BadgeDefinition[];setBadg
     if(!form.name.trim()){ setStatus('Add an achievement name before saving.'); return; }
     const candidate = normaliseBadgeDefinition({ ...form, id: form.id || crypto.randomUUID(), name: form.name.trim(), description: form.description.trim() || 'Achievement target.', icon: form.icon || '🏅' });
     setStatus('Saving achievement...');
+    clearBadgeTombstone(candidate);
     const saved = await saveRemoteBadgeDefinition(candidate);
     const next = [saved, ...badges.filter(b => b.id !== form.id && b.remote_id !== form.remote_id && normalise(b.name) !== normalise(saved.name))];
     setBadges(next);
@@ -1412,8 +1463,9 @@ function AchievementManager({badges,setBadges}:{badges:BadgeDefinition[];setBadg
     setStatus(`${saved.name} is now ${saved.is_active === false ? 'inactive' : 'active'}.`);
   }
   async function deleteBadge(b: BadgeDefinition){
+    addBadgeTombstone(b);
     const ok = await deleteRemoteBadgeDefinition(b);
-    const next = badges.filter(x => x.id!==b.id && x.remote_id!==b.remote_id);
+    const next = badges.filter(x => x.id!==b.id && x.remote_id!==b.remote_id && badgeStableKey(x)!==badgeStableKey(b));
     setBadges(next); setStorage('bbb_badges', next);
     setStatus(ok ? `${b.name} has been deleted.` : `${b.name} was removed locally. If it reappears, run the badge delete policy SQL in Supabase.`);
     if(form.id===b.id) resetForm();

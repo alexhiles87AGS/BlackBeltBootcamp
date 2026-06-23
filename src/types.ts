@@ -23,6 +23,7 @@ export type AthleteProfile = {
   goal?: string;
   competition_weight_kg?: number;
   profile_photo_url?: string;
+  weight_unit?: 'kg' | 'st';
   remote_id?: string;
 };
 
