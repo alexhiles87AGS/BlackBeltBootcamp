@@ -1,6 +1,6 @@
 {
-  "name": "blackbeltbootcamp-v2214-achievement-manager",
-  "version": "2.2.14",
+  "name": "blackbeltbootcamp-v3-cloud-sync-auth",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "scripts": {

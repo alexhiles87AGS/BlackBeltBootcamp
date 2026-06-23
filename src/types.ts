@@ -23,6 +23,7 @@ export type AthleteProfile = {
   goal?: string;
   competition_weight_kg?: number;
   profile_photo_url?: string;
+  remote_id?: string;
 };
 
 export type Exercise = {
@@ -67,6 +68,9 @@ export type WorkoutPlan = {
   location?: string;
   exercises: ProgrammeExercise[];
   remote_id?: string;
+  created_by_user_id?: string;
+  owner_athlete_id?: string;
+  is_template?: boolean;
 };
 
 export type SessionType = 'Home' | 'Gym' | 'FMA' | 'MMA' | 'BJJ' | 'Boxing' | 'Kickboxing' | 'Cardio' | 'Mobility' | 'Physio' | 'Recovery' | 'Strength';
@@ -141,4 +145,20 @@ export type Badge = BadgeDefinition & {
   unlocked: boolean;
   progress: number;
   current_count: number;
+};
+
+export type AthleteMetric = {
+  id: string;
+  athlete_id: string;
+  metric_date: string;
+  weight_kg?: number;
+  height_cm?: number;
+  body_fat_percent?: number;
+  notes?: string;
+  remote_id?: string;
+};
+
+export type AppSetting = {
+  key: string;
+  value: string;
 };
