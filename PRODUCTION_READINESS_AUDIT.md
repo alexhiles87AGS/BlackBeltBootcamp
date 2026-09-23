@@ -1,23 +1,20 @@
-# Production Readiness Audit — V4.0.3
+# Production Readiness Audit — V4.1
 
 ## Scope
-Focused interaction reliability and sync-behaviour patch built on V4.0.1.
+Mobile-first usability and workout-logging redesign built on the working V4.0.4 baseline. No Supabase schema or authentication changes are introduced.
 
-## Verified in source
-- Continuous realtime, page-change, focus, online and visibility-triggered refresh listeners are no longer active in the client.
-- Initial authenticated app load still requests one Supabase refresh.
-- Header Sync button still performs a manual refresh.
-- Supabase write functions remain in place for sessions, workout logs, nutrition, programme assignments and class sessions.
-- Exercise save / completion, session completion, calendar adds, FMA adds and nutrition entry actions now update the UI before waiting for remote persistence.
-- V4.0.1 iPhone CSS remains present.
-- TypeScript/TSX syntax validation completed successfully using TypeScript transpilation diagnostics.
+## Source validation
+- TypeScript/TSX type/syntax validation passes using the available TypeScript compiler and local project type stubs.
+- CSS parses without syntax errors.
+- Controlled-sync behaviour from V4.0.2 remains unchanged: one cloud read on authenticated open/refresh plus manual Sync; normal actions still write to Supabase.
+- Workout logs use optimistic/local UI state and remote upsert/update behaviour for per-set saving.
+- Existing Auth, role separation, cloud sessions, nutrition, metrics, achievements and exercise data paths are retained.
+
+## UX verification targets
+The release includes `V4_1_QA_CHECKLIST.md` for 390×844, 375×667 and physical-iPhone testing. Particular attention should be paid to the iOS keyboard, viewport modal containment, bottom-navigation clearance, app background/resume and workout completion persistence.
 
 ## Build validation
-A full Vite production build could not be completed in the sandbox because package installation is unavailable/offline. Run `npm.cmd install` and `npm.cmd run build` locally before publishing.
+A full Vite production build could not be run in this sandbox because npm dependency installation is unavailable/unreliable here. Run `npm.cmd install` followed by `npm.cmd run build` on the Windows project before publishing.
 
 ## Supabase
-No schema migration is introduced by this patch. Existing V4/V3 Auth and RLS setup remains required.
-
-
-## V4.0.3 scope note
-This patch changes only drawer identity layout, removal of the duplicate calendar preview card, and Workout Builder body-area selector simplification. It makes no schema, authentication, cloud-sync or data-model changes.
+No SQL migration is required for V4.1. Existing V4/V3 Auth, RLS and cloud-sync configuration remains required.

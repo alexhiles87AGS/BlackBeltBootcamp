@@ -1,4 +1,4 @@
-# BlackBeltBootcamp V4.0
+# BlackBeltBootcamp V4.1
 
 BlackBeltBootcamp V4 is the major mobile-first upgrade of the existing React/Vite/Netlify/Supabase training platform for Alex and James Hiles.
 
@@ -126,3 +126,21 @@ See `CHANGELOG_V4_0_2.md` and `INTERACTION_QA_CHECKLIST.md` before deployment.
 ## V4.0.4 focused UI cleanup
 
 V4.0.4 retains all V4.0.2 functionality and makes only three visual/UX changes requested after iPhone testing: the drawer athlete identity is constrained inside its card, the duplicate large calendar session preview is removed, and Workout Builder uses dropdown body-area selection instead of the horizontal body-part pill scroller. No Supabase SQL is required.
+
+
+## V4.1 compact workout-first UX
+
+V4.1 is a focused usability release built on the stable V4.0.4 baseline. It does not change the Supabase schema.
+
+- Home prioritises the next/today workout and weekly completion with a compact greeting.
+- Workout completion is now a focused mode: one exercise expanded, compact exercise queue, previous performance, per-set autosave, rest timer, next exercise and persistent finish controls.
+- Numeric workout inputs request numeric/decimal mobile keyboards and keep units visible.
+- Demo modals are constrained to the viewport and frequent controls target touch-friendly sizing.
+- Page introductions and nested cards are reduced in favour of flatter surfaces and clearer hierarchy.
+- Nutrition is action-first: summary, meal/water logging and entries appear before target editing, with recent-meal shortcuts and clearer empty states.
+- Progress handles low-data states more gracefully and promotes weekly consistency over an ambiguous daily streak headline.
+- Exercise Library is a compact list with body/muscle/type filters, favourites, recent exercises and detail-on-selection. Duplicate exercise names are disambiguated with equipment/variant information.
+- The bottom More shortcut is removed so the hamburger drawer is the single secondary-navigation entry point.
+- Training Calendar retains past/future week navigation and has clearer accessible week controls.
+
+Run `V4_1_QA_CHECKLIST.md` locally before publishing.

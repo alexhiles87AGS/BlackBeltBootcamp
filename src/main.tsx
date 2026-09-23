@@ -4,7 +4,7 @@ import {
   Activity, Apple, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Award, BarChart3, CalendarDays,
   CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Cloud, Coffee, Database,
   Droplets, Dumbbell, Eye, Flame, GripVertical, Home, Import, Library, ListChecks, LogOut,
-  Medal, Menu, MoreHorizontal, PlayCircle, Plus, RefreshCw, Save, Search, Shield, Sun,
+  Medal, Menu, MoreHorizontal, PlayCircle, Plus, RefreshCw, Save, Search, Shield, Star, Sun,
   Target, Trash2, Trophy, User, Users, Utensils, Video, Weight, X, ClipboardList, Edit3, KeyRound
 } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -32,7 +32,7 @@ const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[];
   { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'], group: 'Admin' },
 ];
 
-const APP_VERSION = '4.0.3-ui-cleanup';
+const APP_VERSION = '4.1.0-compact-workout-ux';
 
 const cleanProfiles: AthleteProfile[] = [
   {
@@ -802,9 +802,13 @@ async function saveRemoteWorkoutLog(log: WorkoutLog, athlete: AthleteProfile | u
       notes: log.notes || null,
       completed: !!log.completed,
     };
-    const { data, error } = await supabase.from('workout_logs').insert(row).select('*').single();
-    if (error) throw error;
-    return { ...log, id: data?.id || log.id, remote_id: data?.id || undefined } as WorkoutLog;
+    const existingRemoteId = log.remote_id && isUuid(log.remote_id) ? log.remote_id : null;
+    const result = existingRemoteId
+      ? await supabase.from('workout_logs').update(row).eq('id', existingRemoteId).select('*').single()
+      : await supabase.from('workout_logs').insert(row).select('*').single();
+    if (result.error) throw result.error;
+    const data = result.data;
+    return { ...log, id: data?.id || log.id, remote_id: data?.id || existingRemoteId || undefined } as WorkoutLog;
   } catch (err) { console.warn('Supabase workout log save skipped:', err); return log; }
 }
 
@@ -1109,14 +1113,14 @@ function App() {
   return <div className="appShell v4Shell">
     <header className="topbar v4Topbar">
       <button className="iconButton navTrigger" onClick={()=>setDrawerOpen(true)} aria-label="Open menu" aria-expanded={drawerOpen} aria-controls="app-drawer"><Menu size={25}/></button>
-      <button className="topBrand" onClick={()=>go('dashboard')} aria-label="Go home"><span className="brandShield"><Shield size={24}/></span><div><b>BlackBeltBootcamp <i>V4.0.4</i></b><span>Discipline builds freedom</span></div></button>
+      <button className="topBrand" onClick={()=>go('dashboard')} aria-label="Go home"><span className="brandShield"><Shield size={24}/></span><div><b>BlackBeltBootcamp <i>V4.1</i></b><span>Discipline builds freedom</span></div></button>
       <button className="syncPill" onClick={()=>requestSync('manual')} disabled={syncing}><Cloud size={16}/><span>{syncing ? 'Syncing…' : displaySyncTime(lastSynced)}</span><RefreshCw size={15} className={syncing ? 'spinning' : ''}/></button>
       <button className="profileChip" onClick={()=>go('profile')}><span className="avatar">{profile.profile_photo_url ? <img src={profile.profile_photo_url} alt=""/> : getInitials(profile.name)}</span><span><b>{currentUser.name}</b><em>{titleCase(currentUser.role)}</em></span><ChevronRight size={17}/></button>
     </header>
 
     {drawerOpen && <div className="drawerBackdrop" onClick={()=>setDrawerOpen(false)} />}
     <aside id="app-drawer" className={`drawer v4Drawer ${drawerOpen ? 'open' : ''}`} aria-hidden={!drawerOpen}>
-      <div className="drawerHead"><div className="brand"><span className="brandShield"><Shield size={24}/></span><div><h1>BlackBeltBootcamp</h1><span>Training OS V4.0.4</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
+      <div className="drawerHead"><div className="brand"><span className="brandShield"><Shield size={24}/></span><div><h1>BlackBeltBootcamp</h1><span>Training OS V4.1</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
       <button className="drawerUser drawerUserButton" onClick={()=>go('profile')}><span className="avatar large">{getInitials(profile.name)}</span><span className="drawerIdentity"><b>{currentUser.name}</b><span>{currentUser.email}</span><em>{titleCase(currentUser.role)} profile</em></span><ChevronRight size={18}/></button>
       <nav>{['Athlete','Training','Progress','Admin'].map(group => {
         const links = visibleNav.filter(n=>n.group===group);
@@ -1128,13 +1132,13 @@ function App() {
 
     <main className="pageFrame v4PageFrame">
       {page!=='dashboard' && page!=='session' && <PageIntro page={page} title={activeTitle} profile={profile} />}
-      {page==='dashboard' && <Dashboard logs={visibleLogs} events={visibleEvents} badges={liveBadges} profile={profile} focusText={dashboardFocusText} target={targetForProfile} nutritionEntries={nutritionForProfile} setPage={go} openSession={openSession}/>} 
+      {page==='dashboard' && <Dashboard logs={visibleLogs} events={visibleEvents} badges={liveBadges} profile={profile} focusText={dashboardFocusText} target={targetForProfile} nutritionEntries={nutritionForProfile} plans={plans} setPage={go} openSession={openSession}/>} 
       {page==='library' && <ExerciseLibrary exercises={exercises} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} />}
       {page==='import' && <Importer setExercises={setExercises} reloadSupabase={()=>loadFromSupabase('import')} exercises={exercises} />}
       {page==='builder' && <WorkoutBuilder exercises={exercises} plans={plans} setPlans={setPlans} currentUser={currentUser} athletes={athletes} users={users} events={events} setEvents={setEvents} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} />}
       {page==='today' && <Today events={visibleEvents} exercises={exercises} logs={visibleLogs} setLogs={setLogs} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} openSession={openSession}/>} 
       {page==='calendar' && <TrainingCalendar events={visibleEvents} allEvents={events} setEvents={setEvents} openSession={openSession} currentUser={currentUser} profile={profile} plans={plans} syncing={syncing} lastSynced={lastSynced} onRefresh={()=>requestSync('calendar')} />}
-      {page==='session' && <SessionWorkout session={activeSession} setSession={setActiveSession} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} profile={profile} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} onSessionFinished={()=>{ setActiveSession(null); go('dashboard'); requestSync('completed'); }}/>} 
+      {page==='session' && <SessionWorkout session={activeSession} setSession={setActiveSession} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} profile={profile} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} onSessionFinished={()=>{ setActiveSession(null); go('dashboard'); }} onBack={()=>{ setActiveSession(null); go('today'); }}/>} 
       {page==='fma' && <FmaClasses events={events} setEvents={setEvents} openSession={openSession} profile={profile}/>} 
       {page==='nutrition' && <Nutrition profile={profile} target={targetForProfile} entries={nutritionForProfile} setTargets={setNutritionTargets} allTargets={nutritionTargets} setEntries={setNutritionEntries} allEntries={nutritionEntries}/>} 
       {page==='stats' && <Stats logs={visibleLogs} events={visibleEvents} profile={profile} metrics={metrics}/>} 
@@ -1148,7 +1152,6 @@ function App() {
       <button className={['calendar','today','builder','fma','session'].includes(page)?'active':''} onClick={()=>go('calendar')}><Activity/><span>Training</span></button>
       <button className={page==='nutrition'?'active':''} onClick={()=>go('nutrition')}><Utensils/><span>Nutrition</span></button>
       <button className={['stats','badges'].includes(page)?'active':''} onClick={()=>go('stats')}><Trophy/><span>Progress</span></button>
-      <button onClick={()=>setDrawerOpen(true)} aria-expanded={drawerOpen} aria-controls="app-drawer"><MoreHorizontal/><span>More</span></button>
     </nav>
     {video && <VideoModal title={video.title} url={video.url} onClose={()=>setVideo(null)} />}
   </div>;
@@ -1156,13 +1159,13 @@ function App() {
 
 function PageIntro({page,title,profile}:{page:Page;title:string;profile:AthleteProfile}){
   const copy: Partial<Record<Page,string>> = {
-    calendar:'Plan the work. Show up. Get better.', today:'Everything you need for the session in front of you.',
-    library:'Find the right movement, understand it, then train it well.', builder:'Build your training. Your way.',
-    fma:'Classes, attendance and academy training in one place.', nutrition:'Better food. A stronger you.',
-    stats:'Consistent work. Real results.', badges:'Milestones that reward the work.', profile:'Your goals, preferences and progress data.',
-    admin:'Coach, plan and review every athlete from one organised workspace.', import:'Manage the exercise catalogue and demonstration library.'
+    calendar:'Plan and review training.', today:'Open the session you need.',
+    library:'Find the right movement quickly.', builder:'Build, preview and order the session.',
+    fma:'Classes and attendance.', nutrition:'Track today’s fuel and hydration.',
+    stats:'See progress over time.', badges:'Milestones earned through consistency.', profile:'Goals, preferences and progress data.',
+    admin:'Coach, plan and review athletes.', import:'Manage exercises and demo videos.'
   };
-  return <section className={`pageIntro pageIntro-${page}`}><div><span className="eyebrow">{profile.name} · {profile.gym || 'BlackBeltBootcamp'}</span><h2>{title}</h2><p>{copy[page] || 'Train. Progress. Belong.'}</p></div><div className="introMotif"><Shield/><span>Better skills<br/>Stronger people</span></div></section>;
+  return <section className={`compactPageHeader compactPageHeader-${page}`}><div><h2>{title}</h2><p>{copy[page] || `${profile.name} · ${profile.gym || 'BlackBeltBootcamp'}`}</p></div></section>;
 }
 function LoginScreen({setCurrentUser}:{users:AppUser[]; setCurrentUser:(u:AppUser)=>void}){
   const [email,setEmail]=useState('');
@@ -1186,19 +1189,20 @@ function LoginScreen({setCurrentUser}:{users:AppUser[]; setCurrentUser:(u:AppUse
     const {error}=await supabase.auth.resetPasswordForEmail(target,{redirectTo:window.location.origin});
     setStatus(error?error.message:`Password reset email sent to ${target}.`);
   }
-  return <main className="loginPage v4Login"><section className="loginVisual"><span className="brandShield giant"><Shield/></span><span className="eyebrow">BlackBeltBootcamp V4.0.3</span><h1>Discipline builds freedom.</h1><p>A secure training hub for programmes, progress, nutrition and performance.</p><div className="loginPromises"><span><CheckCircle2/>Cloud synced</span><span><CheckCircle2/>Coach assigned</span><span><CheckCircle2/>Athlete focused</span></div></section><section className="loginCard"><div className="loginBrand"><span className="brandShield"><Shield/></span><div><h2>Welcome back</h2><p>Sign in to continue your training.</p></div></div><form onSubmit={login} className="loginForm"><label>Email<input value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com"/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password"/></label>{status&&<div className={`status ${/unable|error|invalid/i.test(status)?'error':''}`}>{status}</div>}<button className="primary big wide" type="submit" disabled={!email||!password||busy}>{busy?'Signing in…':'Sign in'}<ChevronRight/></button></form><button className="forgotButton" onClick={()=>setShowReset(v=>!v)}>Forgot your password?</button>{showReset&&<div className="passwordResetBox"><label>Password reset email<input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="Use login email if blank"/></label><button onClick={resetPassword}><KeyRound size={16}/>Send reset link</button></div>}<p className="secureNote"><Shield size={15}/>Secure Supabase authentication · data follows you across devices</p></section></main>
+  return <main className="loginPage v4Login"><section className="loginVisual"><span className="brandShield giant"><Shield/></span><span className="eyebrow">BlackBeltBootcamp V4.1</span><h1>Discipline builds freedom.</h1><p>A secure training hub for programmes, progress, nutrition and performance.</p><div className="loginPromises"><span><CheckCircle2/>Cloud synced</span><span><CheckCircle2/>Coach assigned</span><span><CheckCircle2/>Athlete focused</span></div></section><section className="loginCard"><div className="loginBrand"><span className="brandShield"><Shield/></span><div><h2>Welcome back</h2><p>Sign in to continue your training.</p></div></div><form onSubmit={login} className="loginForm"><label>Email<input value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com"/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password"/></label>{status&&<div className={`status ${/unable|error|invalid/i.test(status)?'error':''}`}>{status}</div>}<button className="primary big wide" type="submit" disabled={!email||!password||busy}>{busy?'Signing in…':'Sign in'}<ChevronRight/></button></form><button className="forgotButton" onClick={()=>setShowReset(v=>!v)}>Forgot your password?</button>{showReset&&<div className="passwordResetBox"><label>Password reset email<input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="Use login email if blank"/></label><button onClick={resetPassword}><KeyRound size={16}/>Send reset link</button></div>}<p className="secureNote"><Shield size={15}/>Secure Supabase authentication · data follows you across devices</p></section></main>
 }
-function Dashboard({logs,events,badges,profile,focusText,target,nutritionEntries,setPage,openSession}:{logs:WorkoutLog[];events:CalendarEvent[];badges:Badge[];profile:AthleteProfile;focusText:string;target:NutritionTarget;nutritionEntries:NutritionEntry[];setPage:(p:Page)=>void;openSession:(e:CalendarEvent)=>void}) {
+function Dashboard({logs,events,badges,profile,focusText,target,nutritionEntries,plans,setPage,openSession}:{logs:WorkoutLog[];events:CalendarEvent[];badges:Badge[];profile:AthleteProfile;focusText:string;target:NutritionTarget;nutritionEntries:NutritionEntry[];plans:WorkoutPlan[];setPage:(p:Page)=>void;openSession:(e:CalendarEvent)=>void}) {
   const today = todayISO();
   const weekStart = iso(startOfWeek());
   const weekEnd = iso(addDays(weekStart,6));
   const todaySessions = events.filter(e=>dateOnly(e.date)===today).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
   const futureSessions = events.filter(e=>e.status==='planned' && dateOnly(e.date)>=today).sort((a,b)=>`${dateOnly(a.date)} ${a.time||''}`.localeCompare(`${dateOnly(b.date)} ${b.time||''}`));
   const next = todaySessions.find(e=>e.status==='planned') || futureSessions[0];
+  const nextPlan = next ? plans.find(p=>p.id===next.workout_plan_id || p.remote_id===next.remote_plan_id || p.remote_id===next.workout_plan_id) : undefined;
+  const hasStarted = !!next && logs.some(l=>l.session_id===next.id || (!!next.remote_id && l.session_id===next.remote_id));
   const weekEvents = events.filter(e=>dateOnly(e.date)>=weekStart && dateOnly(e.date)<=weekEnd);
   const weekCompleted = weekEvents.filter(e=>e.status==='completed').length;
   const weekPercent = clampPercent(weekCompleted, Math.max(weekEvents.length,1));
-  const streak = calcStreak(logs, events);
   const todayNutrition = nutritionTotals(nutritionEntries.filter(e=>dateOnly(e.entry_date)===today));
   const nextBadges = badges.filter(b=>!b.unlocked).sort((a,b)=>{
     const aRemaining=(a.target_value-a.current_count)/Math.max(1,a.target_value);
@@ -1206,40 +1210,30 @@ function Dashboard({logs,events,badges,profile,focusText,target,nutritionEntries
     return aRemaining-bRemaining || b.progress-a.progress;
   }).slice(0,3);
   const firstName = profile.name.split(' ')[0] || profile.name;
-  return <div className="dashboardV4">
-    <section className="welcomeHero">
-      <div className="welcomeCopy"><span>Good to see you back,</span><h1>{firstName}</h1><p>Same discipline. A stronger you.</p></div>
-      <div className="heroAthleteArt" aria-hidden="true"><Shield/></div>
-    </section>
+  const friendlyDate = dateFromIso(today).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'});
+  return <div className="dashboardV4 compactDashboard">
+    <section className="homeGreeting"><div><span>{friendlyDate}</span><h1>Let’s train, {firstName}</h1></div><Shield aria-hidden="true"/></section>
 
-    <div className="sectionHeading"><div><span className="eyebrow">Your day</span><h2>Today</h2></div><time>{new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}</time></div>
-    <div className="dashboardMainGrid">
-      <section className="featureCard nextSessionCard">
-        <div className="cardLabel"><CalendarDays size={18}/><span>Next session</span></div>
-        {next ? <><div className="sessionVisual"><span className={classNameForType(next.type)}>{next.type}</span><Dumbbell/></div><h3>{next.title}</h3><p><Clock size={16}/>{dateOnly(next.date)===today?'Today':dayLabel(next.date)} · {next.time || 'Time TBC'}</p><button className="primary wide" onClick={()=>openSession(next)}>View session details<ChevronRight size={18}/></button></> : <><div className="emptyFeature"><CalendarDays/><h3>No session scheduled</h3><p>Open the calendar to plan the next session.</p></div><button className="primary wide" onClick={()=>setPage('calendar')}>Open calendar</button></>}
+    <div className="dashboardMainGrid homePriorityGrid">
+      <section className="featureCard nextSessionCard compactNextSession">
+        <div className="cardLabel"><CalendarDays size={18}/><span>{next && dateOnly(next.date)!==today ? 'Next workout' : 'Today’s workout'}</span></div>
+        {next ? <><h3>{next.title}</h3><div className="compactSessionMeta"><span><Clock size={15}/>{dateOnly(next.date)===today?'Today':dayLabel(next.date)} · {next.time || 'Time TBC'}</span><span><Dumbbell size={15}/>{nextPlan?.exercises.length || '—'} exercises · {nextPlan?.location || next.type}</span></div><button className="primary wide" onClick={()=>openSession(next)}>{hasStarted?'Resume workout':'Start workout'}<ChevronRight size={18}/></button></> : <><div className="emptyFeature compactEmpty"><CalendarDays/><h3>No workout planned</h3></div><button className="primary wide" onClick={()=>setPage('calendar')}>Open calendar</button></>}
       </section>
 
-      <section className="featureCard weeklyProgressCard">
+      <section className="featureCard weeklyProgressCard compactWeeklyProgress">
         <div className="cardLabel"><BarChart3 size={18}/><span>Weekly progress</span></div>
-        <div className="ringLayout"><div className="progressRing" style={{'--progress':`${weekPercent * 3.6}deg`} as React.CSSProperties}><div><b>{weekCompleted}/{weekEvents.length || 0}</b><span>Sessions complete</span></div></div><p>Consistent action creates extraordinary results.</p></div>
-        <div className="weekDots">{Array.from({length:7},(_,i)=>{const d=iso(addDays(weekStart,i));const dayEvents=weekEvents.filter(e=>dateOnly(e.date)===d);const completed=dayEvents.some(e=>e.status==='completed');const planned=dayEvents.some(e=>e.status==='planned');return <span key={d} className={completed?'complete':planned?'planned':''}><i>{completed?'✓':planned?'•':''}</i>{dateFromIso(d).toLocaleDateString('en-GB',{weekday:'short'}).slice(0,2)}</span>})}</div>
+        <div className="compactProgressLine"><div className="compactProgressValue"><b>{weekCompleted}/{weekEvents.length || 0}</b><span>sessions</span></div><div className="progress"><i style={{width:`${weekPercent}%`}}/></div><em>{weekPercent}% complete</em></div>
+        <div className="weekDots">{Array.from({length:7},(_,i)=>{const d=iso(addDays(weekStart,i));const dayEvents=weekEvents.filter(e=>dateOnly(e.date)===d);const completed=dayEvents.some(e=>e.status==='completed');const planned=dayEvents.some(e=>e.status==='planned');return <span key={d} className={completed?'complete':planned?'planned':''}><i>{completed?'✓':planned?'•':''}</i>{dateFromIso(d).toLocaleDateString('en-GB',{weekday:'short'}).slice(0,1)}</span>})}</div>
       </section>
 
       <section className="featureCard nutritionSummaryCard" onClick={()=>setPage('nutrition')} role="button" tabIndex={0}>
         <div className="cardLabel"><Utensils size={18}/><span>Nutrition today</span><ChevronRight size={17}/></div>
-        <div className="miniRings">
-          <MetricRing value={todayNutrition.protein_g} target={target.protein_g} label="Protein" suffix="g" tone="green"/>
-          <MetricRing value={todayNutrition.carbs_g} target={target.carbs_g} label="Carbs" suffix="g" tone="orange"/>
-          <MetricRing value={todayNutrition.fats_g} target={target.fats_g} label="Fats" suffix="g" tone="yellow"/>
-          <MetricRing value={Math.round(todayNutrition.water_ml/100)/10} target={Math.round(target.water_ml/100)/10} label="Water" suffix="L" tone="blue"/>
-        </div>
+        <div className="miniRings"><MetricRing value={todayNutrition.protein_g} target={target.protein_g} label="Protein" suffix="g" tone="green"/><MetricRing value={Math.round(todayNutrition.water_ml/100)/10} target={Math.round(target.water_ml/100)/10} label="Water" suffix="L" tone="blue"/></div>
       </section>
 
-      <section className="featureCard streakCard"><div className="cardLabel"><Flame size={18}/><span>Streak</span></div><strong>{streak}</strong><b>Days</b><p>Keep the momentum going.</p></section>
+      <section className="featureCard achievementsCard"><div className="cardLabel"><Trophy size={18}/><span>Next achievements</span><button className="textButton" aria-label="Open achievements" onClick={()=>setPage('badges')}><ChevronRight size={17}/></button></div>{nextBadges.length ? nextBadges.map(b=><div className="achievementLine" key={b.id}><span>{b.icon}</span><div><div><b>{b.name}</b><em>{b.current_count}/{b.target_value}</em></div><div className="progress"><i style={{width:`${b.progress}%`}}/></div></div></div>) : <p className="muted">All current achievements unlocked.</p>}</section>
 
-      <section className="featureCard achievementsCard"><div className="cardLabel"><Trophy size={18}/><span>Next achievements</span><button className="textButton" onClick={()=>setPage('badges')}><ChevronRight size={17}/></button></div>{nextBadges.length ? nextBadges.map(b=><div className="achievementLine" key={b.id}><span>{b.icon}</span><div><div><b>{b.name}</b><em>{b.current_count}/{b.target_value}</em></div><div className="progress"><i style={{width:`${b.progress}%`}}/></div></div></div>) : <p className="muted">All current achievements unlocked.</p>}</section>
-
-      <section className="featureCard focusCard"><div className="cardLabel"><Target size={18}/><span>Today's focus</span></div><blockquote>{focusText || 'Keep stacking the small wins.'}</blockquote><p>A little better every day.</p></section>
+      <section className="featureCard focusCard"><div className="cardLabel"><Target size={18}/><span>Today’s focus</span></div><blockquote>{focusText || 'Keep stacking the small wins.'}</blockquote></section>
     </div>
   </div>
 }
@@ -1252,17 +1246,32 @@ function Kpi({label,value}:{label:string;value:string|number}){ return <div clas
 function SessionRow({event,onClick}:{event:CalendarEvent; onClick:()=>void}){ return <button className="sessionRow" onClick={onClick}><span className={classNameForType(event.type)}>{event.type}</span><div><b>{event.time || 'Time TBC'} · {event.title}</b><em>{dayLabel(event.date)}</em></div><ChevronRight size={18}/></button> }
 function ExerciseLibrary({exercises,onPlay}:{exercises:Exercise[];onPlay:(e:Exercise)=>void}){
   const [q,setQ]=useState(''); const [category,setCategory]=useState('all'); const [body,setBody]=useState('all'); const [muscle,setMuscle]=useState('all');
+  const [mode,setMode]=useState<'all'|'favorites'|'recent'>('all');
+  const [favoriteIds,setFavoriteIds]=useState<string[]>(()=>storage('bbb_favorite_exercises',[]));
+  const [recentIds,setRecentIds]=useState<string[]>(()=>storage('bbb_recent_exercises',[]));
+  const [selected,setSelected]=useState<Exercise|null>(null);
   const cats=useMemo(()=>['all',...Array.from(new Set(exercises.map(e=>e.category).filter(Boolean))).sort()], [exercises]);
   const bodies=useMemo(()=>['all',...Array.from(new Set(exercises.map(e=>bodyOf(e)).filter(Boolean))).sort()], [exercises]);
   const muscleOptions=useMemo(()=>['all',...Array.from(new Set(exercises.filter(e=>body==='all'||bodyOf(e)===body).flatMap(e=>[e.target,...(e.secondary_muscles||[])]).filter(Boolean))).sort()], [exercises, body]);
   useEffect(()=>{ if(!muscleOptions.includes(muscle)) setMuscle('all'); }, [body, muscleOptions.join('|')]);
+  useEffect(()=>setStorage('bbb_favorite_exercises',favoriteIds),[favoriteIds]);
+  useEffect(()=>setStorage('bbb_recent_exercises',recentIds),[recentIds]);
+  function openExercise(ex:Exercise){setSelected(ex);setRecentIds(prev=>[ex.exercise_id,...prev.filter(id=>id!==ex.exercise_id)].slice(0,20));}
+  function toggleFavorite(id:string){setFavoriteIds(prev=>prev.includes(id)?prev.filter(x=>x!==id):[id,...prev]);}
   const filtered=exercises.filter(e=>
-    (category==='all'||e.category===category) &&
-    (body==='all'||bodyOf(e)===body) &&
+    (category==='all'||e.category===category) && (body==='all'||bodyOf(e)===body) &&
     (muscle==='all'||e.target===muscle||(e.secondary_muscles||[]).includes(muscle)) &&
+    (mode==='all'||mode==='favorites'&&favoriteIds.includes(e.exercise_id)||mode==='recent'&&recentIds.includes(e.exercise_id)) &&
     `${e.name} ${e.exercise_id} ${e.target} ${(e.secondary_muscles||[]).join(' ')} ${bodyOf(e)} ${e.equipment}`.toLowerCase().includes(q.toLowerCase())
-  ).slice(0,150);
-  return <section className="panel"><div className="toolbar libraryToolbar"><div className="searchBox"><Search size={18}/><input placeholder="Search exercise, muscle or equipment" value={q} onChange={e=>setQ(e.target.value)}/></div><select value={body} onChange={e=>setBody(e.target.value)}>{bodies.map(c=><option key={c} value={c}>{c==='all'?'All Body Parts':titleCase(c)}</option>)}</select><select value={muscle} onChange={e=>setMuscle(e.target.value)}>{muscleOptions.map(c=><option key={c} value={c}>{c==='all'?'All Muscles / Targets':titleCase(c)}</option>)}</select><select value={category} onChange={e=>setCategory(e.target.value)}>{cats.map(c=><option key={c} value={c}>{c==='all'?'All Types':titleCase(c)}</option>)}</select></div><div className="exerciseGrid">{filtered.map(e=><ExerciseCard key={e.exercise_id} e={e} onPlay={onPlay}/>)}</div></section>
+  ).sort((a,b)=>mode==='recent'?recentIds.indexOf(a.exercise_id)-recentIds.indexOf(b.exercise_id):a.name.localeCompare(b.name)).slice(0,150);
+  const selectedInstructions=(selected?.instructions||[]).filter(x=>x&&!/no written instructions stored yet/i.test(x));
+  const duplicateNameCounts=useMemo(()=>exercises.reduce<Record<string,number>>((acc,e)=>{const key=normalise(e.name);acc[key]=(acc[key]||0)+1;return acc;},{}),[exercises]);
+  const libraryName=(ex:Exercise)=>duplicateNameCounts[normalise(ex.name)]>1 ? `${titleCase(ex.name)} · ${titleCase(ex.equipment||ex.target||bodyOf(ex)||'Variant')}` : titleCase(ex.name);
+  return <section className="libraryCompact">
+    <div className="libraryToolbarCompact"><div className="searchBox"><Search/><input placeholder="Search exercises" value={q} onChange={e=>setQ(e.target.value)}/></div><div className="libraryMode"><button className={mode==='all'?'active':''} onClick={()=>setMode('all')}>All</button><button className={mode==='favorites'?'active':''} onClick={()=>setMode('favorites')}><Star/>Favourites</button><button className={mode==='recent'?'active':''} onClick={()=>setMode('recent')}><Clock/>Recent</button></div><div className="libraryFilters"><select value={body} onChange={e=>setBody(e.target.value)}>{bodies.map(c=><option key={c} value={c}>{c==='all'?'All body parts':titleCase(c)}</option>)}</select><select value={muscle} onChange={e=>setMuscle(e.target.value)}>{muscleOptions.map(c=><option key={c} value={c}>{c==='all'?'All muscles':titleCase(c)}</option>)}</select><select value={category} onChange={e=>setCategory(e.target.value)}>{cats.map(c=><option key={c} value={c}>{c==='all'?'All types':titleCase(c)}</option>)}</select></div></div>
+    {selected&&<section className="libraryDetailPanel"><div className="row between"><div><span className="tag">{titleCase(selected.equipment||'Exercise')}</span><h3>{libraryName(selected)}</h3><p>{[bodyOf(selected),selected.target,...(selected.secondary_muscles||[]).slice(0,3)].filter(Boolean).map(titleCase).join(' · ')}</p></div><button className="iconButton" aria-label="Close exercise details" onClick={()=>setSelected(null)}><X/></button></div>{selected.description&&<p>{sentence(selected.description)}</p>}<div className="row actions"><button className="primary" disabled={!safeVideo(selected)} onClick={()=>onPlay(selected)}><PlayCircle/>Watch demo</button><button onClick={()=>toggleFavorite(selected.exercise_id)}><Star/>{favoriteIds.includes(selected.exercise_id)?'Remove favourite':'Add favourite'}</button></div>{selectedInstructions.length>0&&<details><summary>Instructions</summary><ol>{selectedInstructions.map((line,i)=><li key={i}>{sentence(line)}</li>)}</ol></details>}</section>}
+    <div className="exerciseCompactList">{filtered.map(ex=><div className="exerciseCompactRow" key={ex.exercise_id}><button className="exerciseCompactMain" onClick={()=>openExercise(ex)}><span className="exerciseCompactThumb">{ex.thumbnail_url?<img src={ex.thumbnail_url} alt=""/>:<Dumbbell/>}</span><span className="exerciseCompactCopy"><b>{libraryName(ex)}</b><em>{titleCase(ex.equipment||'Body weight')} · {titleCase(ex.target||bodyOf(ex))}</em></span><ChevronRight/></button><button className={`favoriteButton ${favoriteIds.includes(ex.exercise_id)?'active':''}`} aria-label={`${favoriteIds.includes(ex.exercise_id)?'Remove':'Add'} ${titleCase(ex.name)} ${favoriteIds.includes(ex.exercise_id)?'from':'to'} favourites`} onClick={()=>toggleFavorite(ex.exercise_id)}><Star/></button></div>)}</div>
+  </section>;
 }
 function ExerciseCard({e,onPlay}:{e:Exercise;onPlay:(e:Exercise)=>void}) {
   const [open,setOpen]=useState(false); const hasVideo=!!(e.video_url||e.video_path);
@@ -1304,8 +1313,8 @@ function TrainingCalendar({events,allEvents,setEvents,openSession,currentUser,pr
   const weekLabel=`${dayLabel(visibleWeek[0])} – ${dayLabel(visibleWeek[6])}`;
   return <div className="trainingCalendarV4">
     <section className="featureCard calendarBoard">
-      <div className="calendarHeader"><div><h3>Training Calendar</h3><p><Cloud size={16}/>{syncing?'Syncing diary…':displaySyncTime(lastSynced)}</p></div><button className="iconButton" onClick={onRefresh} disabled={syncing}><RefreshCw className={syncing?'spinning':''}/></button></div>
-      <div className="weekSelector"><button className="iconButton" onClick={()=>setWeekOffset(v=>v-1)}><ChevronLeft/></button><strong>{weekLabel}</strong><button className="iconButton" onClick={()=>setWeekOffset(v=>v+1)}><ChevronRight/></button></div>
+      <div className="calendarHeader"><div><p><Cloud size={16}/>{syncing?'Syncing diary…':displaySyncTime(lastSynced)}</p></div><button className="iconButton" onClick={onRefresh} disabled={syncing}><RefreshCw className={syncing?'spinning':''}/></button></div>
+      <div className="weekSelector"><button className="iconButton" aria-label="Previous week" onClick={()=>setWeekOffset(v=>v-1)}><ChevronLeft/></button><strong>{weekLabel}</strong><button className="iconButton" aria-label="Next week" onClick={()=>setWeekOffset(v=>v+1)}><ChevronRight/></button></div>
       <div className="weekStrip">{visibleWeek.map(d=>{const key=iso(d);const dayEvents=events.filter(e=>dateOnly(e.date)===key);const done=dayEvents.some(e=>e.status==='completed');const planned=dayEvents.some(e=>e.status==='planned');return <button key={key} className={`${selectedDate===key?'selected':''} ${done?'done':planned?'planned':''}`} onClick={()=>setSelectedDate(key)}><span>{dateFromIso(d).toLocaleDateString('en-GB',{weekday:'short'})}</span><b>{dateFromIso(d).getUTCDate()}</b><i>{done?'✓':planned?'•':''}</i></button>})}</div>
       <div className="calendarLegend"><span><i className="doneDot">✓</i>Completed</span><span><i className="plannedDot">•</i>Scheduled</span><span><i/>No session</span></div>
     </section>
@@ -1326,59 +1335,78 @@ function Today({events,exercises,logs,setLogs,onPlay,openSession}:{events:Calend
   return <section className="panel"><div className="row between"><div><h3>Today's Training</h3><p className="muted">Choose a date, open a session, follow the exercises and log completion.</p></div><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>{sessions.length===0 && <p className="muted">No sessions planned for this date.</p>}{sessions.map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}</section>
 }
 
-function SessionWorkout({session,setSession,exercises,plans,logs,setLogs,events,setEvents,profile,onPlay,onSessionFinished}:{session:CalendarEvent|null; setSession:(s:CalendarEvent|null)=>void; exercises:Exercise[]; plans:WorkoutPlan[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; profile:AthleteProfile; onPlay:(e:Exercise)=>void; onSessionFinished:()=>void}){
+function SessionWorkout({session,setSession,exercises,plans,logs,setLogs,events,setEvents,profile,onPlay,onSessionFinished,onBack}:{session:CalendarEvent|null; setSession:(s:CalendarEvent|null)=>void; exercises:Exercise[]; plans:WorkoutPlan[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; profile:AthleteProfile; onPlay:(e:Exercise)=>void; onSessionFinished:()=>void; onBack:()=>void}){
   const fallback: CalendarEvent = session || { id:'adhoc', date:todayISO(), time:'', title:'Ad hoc Workout', type:'Gym', status:'planned' };
   const isClassSession = !!fallback.class_name || fallback.type === 'FMA';
   if (isClassSession) return <ClassSessionCompletion session={fallback} setSession={setSession} events={events} setEvents={setEvents}/>;
-  return <ExerciseSessionCompletion session={fallback} setSession={setSession} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} profile={profile} onPlay={onPlay} onSessionFinished={onSessionFinished}/>;
+  return <ExerciseSessionCompletion session={fallback} setSession={setSession} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} profile={profile} onPlay={onPlay} onSessionFinished={onSessionFinished} onBack={onBack}/>;
 }
 
-function ExerciseSessionCompletion({session,setSession,exercises,plans,logs,setLogs,events,setEvents,profile,onPlay,onSessionFinished}:{session:CalendarEvent; setSession:(s:CalendarEvent|null)=>void; exercises:Exercise[]; plans:WorkoutPlan[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; profile:AthleteProfile; onPlay:(e:Exercise)=>void; onSessionFinished:()=>void}){
-  const plan = plans.find(p=>p.id===session.workout_plan_id);
+function ExerciseSessionCompletion({session,setSession,exercises,plans,logs,setLogs,events,setEvents,profile,onPlay,onSessionFinished,onBack}:{session:CalendarEvent; setSession:(s:CalendarEvent|null)=>void; exercises:Exercise[]; plans:WorkoutPlan[]; logs:WorkoutLog[]; setLogs:(l:WorkoutLog[])=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void; profile:AthleteProfile; onPlay:(e:Exercise)=>void; onSessionFinished:()=>void; onBack:()=>void}){
+  const plan = plans.find(p=>p.id===session.workout_plan_id || p.remote_id===session.remote_plan_id || p.remote_id===session.workout_plan_id);
   const picks = useMemo(()=>getSessionExercises(session, exercises, plans), [session.id, session.workout_plan_id, exercises.length, plans.length]);
-  const [date,setDate]=useState(session.date || todayISO());
-  const [savedExercises,setSavedExercises]=useState<Set<string>>(new Set());
+  const sessionIds = useMemo(()=>new Set([session.id, session.remote_id].filter(Boolean) as string[]),[session.id,session.remote_id]);
+  const existingCompleted = useMemo(()=>new Set(logs.filter(l=>l.completed && !!l.session_id && sessionIds.has(l.session_id)).map(l=>l.exercise_id)),[logs,sessionIds]);
+  const [savedExercises,setSavedExercises]=useState<Set<string>>(existingCompleted);
+  const [currentIndex,setCurrentIndex]=useState(()=>Math.max(0,picks.findIndex(p=>!existingCompleted.has(p.exercise_id))));
   const [actionStatus,setActionStatus]=useState('');
-  const [savingExercise,setSavingExercise]=useState('');
+  const [savingSet,setSavingSet]=useState('');
   const [finishingSession,setFinishingSession]=useState(false);
+  const [restSeconds,setRestSeconds]=useState(0);
+  const [restActive,setRestActive]=useState(false);
   function plannedRows(exerciseId:string){
+    const previousCurrent=logs.find(l=>l.exercise_id===exerciseId && !!l.session_id && sessionIds.has(l.session_id));
+    if(previousCurrent?.sets?.length) return previousCurrent.sets;
     const planned = plan?.exercises.find(e=>e.exercise_id===exerciseId);
     const count = Math.max(1, Number(planned?.planned_sets || 3));
     return Array.from({length: count}, (_,i)=>({set_number:i+1,reps: planned?.planned_reps || '',weight: planned?.planned_weight || '',completed:false}));
   }
   const [setRows,setSetRows]=useState<Record<string,ExerciseLogSet[]>>(()=>Object.fromEntries(picks.map(e=>[e.exercise_id,plannedRows(e.exercise_id)])));
-  useEffect(()=>{ setSetRows(Object.fromEntries(picks.map(e=>[e.exercise_id,plannedRows(e.exercise_id)]))); setSavedExercises(new Set()); }, [picks.map(p=>p.exercise_id).join('|'), plan?.id]);
-  function updateSet(exId:string, idx:number, field:keyof ExerciseLogSet, value:any){ setSetRows(prev=>({...prev,[exId]:(prev[exId]||[]).map((s,i)=>i===idx?{...s,[field]:value}:s)})); }
-  async function completeExercise(e:Exercise, quick=false){
-    if (savingExercise) return;
-    const sets = quick ? [] : (setRows[e.exercise_id] || []);
-    const entry: WorkoutLog = { id:crypto.randomUUID(), session_id:session.id, date, session_type:session.type, exercise_id:e.exercise_id, exercise_name:titleCase(e.name), sets, completed:true, reps: sets.map(s=>s.reps).filter(Boolean).join(', '), weight: sets.map(s=>s.weight).filter(Boolean).join(', ') };
-    // Optimistically collapse the exercise and record the local log immediately.
-    setSavingExercise(e.exercise_id);
-    setSavedExercises(prev => new Set([...Array.from(prev), e.exercise_id]));
-    setLogs([entry,...logs]);
-    setActionStatus(`${titleCase(e.name)} saved.`);
-    try {
-      const saved = await saveRemoteWorkoutLog(entry, profile, session);
-      setLogs([saved,...logs.filter(log=>log.id!==entry.id)]);
-      setActionStatus((saved as any).remote_id ? `${titleCase(e.name)} saved and synced.` : `${titleCase(e.name)} saved on this device. Cloud save could not be confirmed.`);
-    } finally { setSavingExercise(''); }
+  useEffect(()=>{ if(currentIndex>=picks.length) setCurrentIndex(Math.max(0,picks.length-1)); },[picks.length,currentIndex]);
+  useEffect(()=>{ if(!restActive || restSeconds<=0) return; const timer=window.setInterval(()=>setRestSeconds(v=>{ if(v<=1){setRestActive(false);return 0;} return v-1;}),1000); return ()=>window.clearInterval(timer); },[restActive,restSeconds]);
+  function updateSet(exId:string, idx:number, field:keyof ExerciseLogSet, value:any){ setSetRows(prev=>({...prev,[exId]:(prev[exId]||[]).map((row,i)=>i===idx?{...row,[field]:value}:row)})); }
+  function existingLogFor(exerciseId:string){ return logs.find(l=>l.exercise_id===exerciseId && !!l.session_id && sessionIds.has(l.session_id)); }
+  async function persistExercise(e:Exercise, nextSets:ExerciseLogSet[], completed:boolean){
+    const existing=existingLogFor(e.exercise_id);
+    const entry:WorkoutLog={id:existing?.id||crypto.randomUUID(),remote_id:existing?.remote_id,session_id:session.remote_id||session.id,date:dateOnly(session.date),session_type:session.type,exercise_id:e.exercise_id,exercise_name:titleCase(e.name),sets:nextSets,completed,reps:nextSets.map(row=>row.reps).filter(Boolean).join(', '),weight:nextSets.map(row=>row.weight).filter(Boolean).join(', ')};
+    const optimistic=existing?logs.map(l=>l.id===existing.id?entry:l):[entry,...logs]; setLogs(optimistic);
+    const saved=await saveRemoteWorkoutLog(entry,profile,session);
+    setLogs(existing?optimistic.map(l=>l.id===entry.id?saved:l):optimistic.map(l=>l.id===entry.id?saved:l));
+    return saved;
   }
-  function completeSession(){
-    if (finishingSession) return;
-    setFinishingSession(true);
-    const updatedEvents = events.map(e=>e.id===session.id?{...e,date,status:'completed' as const}:e);
-    setEvents(updatedEvents);
-    setActionStatus('Session completed. Returning to dashboard…');
-    // Do not block the UI transition on the network request.
-    void updateRemoteSessionStatus(session, 'completed', date, session.time);
-    setSession(null);
-    onSessionFinished();
+  async function completeSet(e:Exercise, idx:number){
+    if(savingSet) return; setSavingSet(`${e.exercise_id}-${idx}`);
+    const next=(setRows[e.exercise_id]||[]).map((row,i)=>i===idx?{...row,completed:true}:row);
+    setSetRows(prev=>({...prev,[e.exercise_id]:next})); setActionStatus(`Set ${idx+1} saved.`); setRestSeconds(60); setRestActive(true);
+    const allDone=next.length>0&&next.every(row=>row.completed);
+    await persistExercise(e,next,allDone); setSavingSet('');
+    if(allDone){ setSavedExercises(prev=>new Set([...Array.from(prev),e.exercise_id])); setActionStatus(`${titleCase(e.name)} complete.`); }
   }
-  return <section className="panel workoutCompletionPanel"><div className="sessionHeader"><div><span className={classNameForType(session.type)}>{session.type}</span><h3>{session.time ? `${session.time} · ` : ''}{session.title}</h3><p className="muted">{plan ? `Assigned programme: ${plan.name}. ` : ''}Follow the programme for the selected date. Record sets, reps and weight where useful, or mark each exercise complete without logging numbers.</p></div><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label></div><div className="workoutList">{picks.map(e=>{
-    const saved = savedExercises.has(e.exercise_id);
-    return <div className={`workoutExercise ${saved ? 'exerciseCollapsed' : ''}`} key={e.exercise_id}>{saved ? <div className="row between savedExerciseSummary"><div><h3>{titleCase(e.name)}</h3><p><CheckCircle2 size={16}/>Exercise log saved</p></div><button onClick={()=>setSavedExercises(prev=>{ const next=new Set(prev); next.delete(e.exercise_id); return next; })}>Reopen</button></div> : <><div className="row between"><div><h3>{titleCase(e.name)}</h3><p>{titleCase(bodyOf(e))} · {titleCase(e.target)} · {titleCase(e.equipment)}</p></div><button onClick={()=>onPlay(e)} disabled={!safeVideo(e)}><Video size={16}/>Watch Demo</button></div><InstructionsBlock exercise={e}/><div className="setTable"><div className="setHead"><span>Set</span><span>Reps</span><span>Weight</span><span>Done</span></div>{(setRows[e.exercise_id] || []).map((s,idx)=><div className="setRow" key={s.set_number}><span>{s.set_number}</span><input value={s.reps||''} onChange={ev=>updateSet(e.exercise_id,idx,'reps',ev.target.value)} placeholder="8-12"/><input value={s.weight||''} onChange={ev=>updateSet(e.exercise_id,idx,'weight',ev.target.value)} placeholder="kg"/><input type="checkbox" checked={!!s.completed} onChange={ev=>updateSet(e.exercise_id,idx,'completed',ev.target.checked)}/></div>)}</div><div className="row actions"><button type="button" className="primary" onClick={()=>completeExercise(e)} disabled={!!savingExercise}><CheckCircle2 size={16}/>{savingExercise===e.exercise_id?'Saving…':'Save exercise log'}</button><button type="button" onClick={()=>completeExercise(e,true)} disabled={!!savingExercise}>Mark complete only</button></div></> }</div>
-  })}</div>{actionStatus&&<div className="status actionFeedback">{actionStatus}</div>}<button type="button" className="primary big" onClick={completeSession} disabled={finishingSession}><Trophy size={18}/>{finishingSession?'Completing…':'Mark session completed'}</button></section>
+  async function completeWithoutNumbers(e:Exercise){ if(savingSet)return; setSavingSet(`${e.exercise_id}-quick`); await persistExercise(e,[],true); setSavingSet(''); setSavedExercises(prev=>new Set([...Array.from(prev),e.exercise_id])); setActionStatus(`${titleCase(e.name)} marked complete.`); }
+  function nextExercise(){ const next=Math.min(picks.length-1,currentIndex+1); setCurrentIndex(next); window.scrollTo({top:0,behavior:'smooth'}); }
+  function completeSession(){ if(finishingSession)return; setFinishingSession(true); setEvents(events.map(e=>e.id===session.id?{...e,status:'completed' as const}:e)); void updateRemoteSessionStatus(session,'completed',session.date,session.time); setSession(null); onSessionFinished(); }
+  if(!picks.length) return <section className="panel focusedWorkout"><div className="focusedWorkoutTop"><button className="iconButton" onClick={onBack} aria-label="Back to training"><ArrowLeft/></button><div><h2>{session.title}</h2><p>No exercises are attached to this session.</p></div></div></section>;
+  const current=picks[currentIndex];
+  const currentSets=setRows[current.exercise_id]||[];
+  const previous=[...logs].filter(l=>l.exercise_id===current.exercise_id && (!l.session_id || !sessionIds.has(l.session_id)) && l.completed).sort((a,b)=>dateOnly(b.date).localeCompare(dateOnly(a.date)))[0];
+  const completedCount=savedExercises.size;
+  const progressPct=Math.round((completedCount/Math.max(1,picks.length))*100);
+  return <section className="focusedWorkout">
+    <div className="focusedWorkoutTop"><button className="iconButton" onClick={onBack} aria-label="Back to today’s training"><ArrowLeft/></button><div><span className={classNameForType(session.type)}>{session.type}</span><h2>{session.title}</h2><p>{dayLabel(session.date)} · {session.time||'Time TBC'} · {completedCount}/{picks.length} exercises complete</p></div></div>
+    <div className="sessionProgressBar" aria-label={`${progressPct}% of workout complete`}><i style={{width:`${progressPct}%`}}/></div>
+    <div className="exerciseQueue" aria-label="Workout exercises">{picks.map((e,i)=><button key={e.exercise_id} className={`${i===currentIndex?'current':''} ${savedExercises.has(e.exercise_id)?'done':''}`} onClick={()=>setCurrentIndex(i)}><span>{savedExercises.has(e.exercise_id)?'✓':i+1}</span><b>{titleCase(e.name)}</b><em>{i===currentIndex?'Current':savedExercises.has(e.exercise_id)?'Complete':'Up next'}</em></button>)}</div>
+
+    <article className="currentExerciseCard">
+      <div className="currentExerciseHeader"><div><span className="eyebrow">Exercise {currentIndex+1} of {picks.length}</span><h3>{titleCase(current.name)}</h3><p>{titleCase(bodyOf(current))} · {titleCase(current.target)} · {titleCase(current.equipment||'Body weight')}</p></div><button onClick={()=>onPlay(current)} disabled={!safeVideo(current)} aria-label={`Watch demo for ${titleCase(current.name)}`}><Video/>Demo</button></div>
+      {previous && <div className="previousPerformance"><span>Previous</span><b>{previous.sets?.length ? previous.sets.map(row=>`${row.weight||'—'}kg × ${row.reps||'—'}`).join(' · ') : 'Completed without numbers'}</b><em>{dayLabel(previous.date)}</em></div>}
+      <InstructionsBlock exercise={current}/>
+      <div className="focusedSets">{currentSets.map((row,idx)=><div className={`focusedSetRow ${row.completed?'done':''}`} key={row.set_number}><strong>Set {row.set_number}</strong><label><span>Reps</span><input type="number" inputMode="numeric" min="0" value={row.reps||''} onChange={e=>updateSet(current.exercise_id,idx,'reps',e.target.value)} aria-label={`${titleCase(current.name)}, set ${row.set_number}, reps`}/></label><label><span>Weight</span><div className="unitInput"><input type="number" inputMode="decimal" step="0.5" min="0" value={row.weight||''} onChange={e=>updateSet(current.exercise_id,idx,'weight',e.target.value)} aria-label={`${titleCase(current.name)}, set ${row.set_number}, weight in kilograms`}/><span>kg</span></div></label><button className={row.completed?'setDoneButton':'primary setCompleteButton'} onClick={()=>completeSet(current,idx)} disabled={!!row.completed||!!savingSet}>{row.completed?<><CheckCircle2/>Saved</>:<><CheckCircle2/>Complete set</>}</button></div>)}</div>
+      <div className="workoutActionRow"><button onClick={()=>completeWithoutNumbers(current)} disabled={!!savingSet}>Complete without numbers</button><button className="primary" onClick={nextExercise} disabled={currentIndex===picks.length-1}>Next exercise<ChevronRight/></button></div>
+    </article>
+
+    <div className="workoutDock"><div className="restTimer"><Clock/><div><span>Rest timer</span><b>{Math.floor(restSeconds/60)}:{String(restSeconds%60).padStart(2,'0')}</b></div><button onClick={()=>{setRestSeconds(60);setRestActive(v=>!v)}}>{restActive?'Pause':'Start 60s'}</button></div><button className="primary finishWorkoutButton" onClick={completeSession} disabled={finishingSession}><Trophy/>{finishingSession?'Completing…':'Finish workout'}</button></div>
+    {actionStatus&&<div className="status actionFeedback">{actionStatus}</div>}
+  </section>
 }
 
 function ClassSessionCompletion({session,setSession,events,setEvents}:{session:CalendarEvent; setSession:(s:CalendarEvent|null)=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void}){
@@ -1470,7 +1498,7 @@ function WorkoutBuilder({exercises,plans,setPlans,currentUser,athletes,users,eve
 
     <section className="panel exercisePickerPanel"><div className="row between"><div className="builderStepTitle"><span className="stepNumber">2</span><div><h3>Select Exercises</h3><p>{list.length} matching exercises for {titleCase(body)}</p></div></div><span className="draftCount">{selected.length} in draft</span></div><div className="exercisePickerList">{list.map(ex=><div className="exercisePickerRow" key={ex.exercise_id}><div className="exerciseThumb"><Dumbbell/></div><div className="exercisePickerCopy"><b>{titleCase(ex.name)}</b><span>{[ex.target,...(ex.secondary_muscles||[]).slice(0,2)].filter(Boolean).map(titleCase).join(' · ')}</span></div><button className="previewButton" onClick={()=>setPreviewing(ex)}><Eye size={17}/>Preview</button><button className="addButton" onClick={()=>addExercise(ex)}><Plus size={18}/>Add</button></div>)}</div></section>
 
-    <section className="panel draftWorkoutPanel"><div className="row between"><div className="builderStepTitle"><span className="stepNumber">3</span><div><h3>Your Workout (Draft)</h3><p>{selected.length} exercises · {totalSets} total sets</p></div></div>{selected.length>0&&<button className="textButton" onClick={()=>setSelected([])}><Trash2 size={16}/>Clear all</button>}</div>{selected.length===0?<div className="emptyDraft"><ListChecks/><h4>Your draft is empty</h4><p>Preview exercises above, then add the right movements.</p></div>:<div className="draftExerciseList">{selected.map((item,index)=>{const detail=detailedExercise(item);return <div className="draftExerciseRow" key={`${item.exercise_id}-${index}`}><div className="dragHandle"><GripVertical/><span>{index+1}</span></div><div className="draftMain"><b>{item.name}</b><span>{detail?[detail.target,...(detail.secondary_muscles||[]).slice(0,2)].filter(Boolean).map(titleCase).join(' · '):'Assigned exercise'}</span><div className="draftFields"><label>Sets<input type="number" value={item.planned_sets||3} onChange={e=>updateSelected(index,'planned_sets',e.target.value)}/></label><label>Reps<input value={item.planned_reps||''} onChange={e=>updateSelected(index,'planned_reps',e.target.value)}/></label><label>Weight<input value={item.planned_weight||''} onChange={e=>updateSelected(index,'planned_weight',e.target.value)}/></label></div></div><div className="draftActions"><button onClick={()=>detail&&setPreviewing(detail)} disabled={!detail}><Eye/></button><button onClick={()=>moveExercise(index,-1)} disabled={index===0}><ArrowUp/></button><button onClick={()=>moveExercise(index,1)} disabled={index===selected.length-1}><ArrowDown/></button><button className="dangerIcon" onClick={()=>setSelected(selected.filter((_,i)=>i!==index))}><Trash2/></button></div></div>})}</div>}
+    <section className="panel draftWorkoutPanel"><div className="row between"><div className="builderStepTitle"><span className="stepNumber">3</span><div><h3>Your Workout (Draft)</h3><p>{selected.length} exercises · {totalSets} total sets</p></div></div>{selected.length>0&&<button className="textButton" onClick={()=>setSelected([])}><Trash2 size={16}/>Clear all</button>}</div>{selected.length===0?<div className="emptyDraft"><ListChecks/><h4>Your draft is empty</h4><p>Preview exercises above, then add the right movements.</p></div>:<div className="draftExerciseList">{selected.map((item,index)=>{const detail=detailedExercise(item);return <div className="draftExerciseRow" key={`${item.exercise_id}-${index}`}><div className="dragHandle"><GripVertical/><span>{index+1}</span></div><div className="draftMain"><b>{item.name}</b><span>{detail?[detail.target,...(detail.secondary_muscles||[]).slice(0,2)].filter(Boolean).map(titleCase).join(' · '):'Assigned exercise'}</span><div className="draftFields"><label>Sets<input type="number" inputMode="numeric" min="1" value={item.planned_sets||3} onChange={e=>updateSelected(index,'planned_sets',e.target.value)}/></label><label>Reps<input inputMode="numeric" value={item.planned_reps||''} onChange={e=>updateSelected(index,'planned_reps',e.target.value)}/></label><label>Weight<input inputMode="decimal" value={item.planned_weight||''} onChange={e=>updateSelected(index,'planned_weight',e.target.value)}/></label></div></div><div className="draftActions"><button onClick={()=>detail&&setPreviewing(detail)} disabled={!detail}><Eye/></button><button onClick={()=>moveExercise(index,-1)} disabled={index===0}><ArrowUp/></button><button onClick={()=>moveExercise(index,1)} disabled={index===selected.length-1}><ArrowDown/></button><button className="dangerIcon" onClick={()=>setSelected(selected.filter((_,i)=>i!==index))}><Trash2/></button></div></div>})}</div>}
       <div className="draftFooter"><div className="draftStats"><span><Clock/>~{Math.max(15,selected.length*8)} min</span><span><Dumbbell/>{selected.length} exercises</span><span><ListChecks/>{totalSets} sets</span></div><button className="primary saveWorkoutButton" onClick={savePlan} disabled={!selected.length}><Save/>{editingPlanId?'Update Workout':'Save Workout'}<ChevronRight/></button></div>{editingPlanId&&<button className="secondaryWide" onClick={resetDraft}>Start a new workout</button>}{builderStatus&&<div className="status">{builderStatus}</div>}</section>
 
     <section className="panel savedWorkoutsPanel"><div className="row between"><div><span className="eyebrow">Your library</span><h3>Saved Workouts</h3></div><div className="scheduleInputs"><input type="date" value={scheduleDate} onChange={e=>setScheduleDate(e.target.value)}/><input type="time" value={scheduleTime} onChange={e=>setScheduleTime(e.target.value)}/></div></div>{visibleSavedPlans.length===0?<p className="muted">No saved workouts available yet.</p>:<div className="savedWorkoutGrid">{visibleSavedPlans.map(plan=><article className="savedWorkoutCard" key={plan.id}><div><span className={classNameForType(plan.session_type||'Gym')}>{plan.session_type||'Gym'}</span><h4>{plan.name}</h4><p>{plan.focus}</p><em>{plan.exercises.length} exercises</em></div><div className="savedWorkoutActions"><button onClick={()=>editPlan(plan)}><Edit3/>View / edit</button>{currentUser.role==='athlete'&&<button onClick={()=>createProfileCopy(plan)}><Plus/>Make my copy</button>}<button className="primary" onClick={()=>addToMyCalendar(plan)}><CalendarDays/>Add to calendar</button><button className="dangerIcon" onClick={()=>deletePlan(plan)}><Trash2/></button></div></article>)}</div>}</section>
@@ -1481,7 +1509,7 @@ function WorkoutBuilder({exercises,plans,setPlans,currentUser,athletes,users,eve
 
 function ExercisePreviewSheet({exercise,onClose,onAdd}:{exercise:Exercise;onClose:()=>void;onAdd:()=>void}){
   const url=safeVideo(exercise);
-  return <div className="modalBackdrop previewBackdrop" onClick={onClose}><section className="exercisePreviewSheet" onClick={e=>e.stopPropagation()}><div className="sheetHandle"/><button className="closeSheet" onClick={onClose}><X/></button><div className="previewMedia">{url?<video src={url} controls playsInline preload="metadata"/>:<div className="videoMissing"><Video/><span>No demo video available</span></div>}</div><div className="previewDetails"><div className="row between"><div><span className="tag">{titleCase(exercise.equipment||'Exercise')}</span><h3>{titleCase(exercise.name)}</h3></div></div><p>{sentence(exercise.description||'Review the exercise demonstration and target muscles before adding it to the workout.')}</p><div className="chips">{[exercise.target,...(exercise.secondary_muscles||[])].filter(Boolean).map(m=><span key={m}>{titleCase(m)}</span>)}</div><details><summary>Instructions</summary>{(exercise.instructions||[]).length?<ol>{(exercise.instructions||[]).filter(Boolean).map((instruction,i)=><li key={i}>{sentence(instruction)}</li>)}</ol>:<p className="muted">No written instructions are stored for this exercise.</p>}</details><button className="primary wide" onClick={onAdd}>Add to Workout<Plus/></button></div></section></div>
+  return <div className="modalBackdrop previewBackdrop" onClick={onClose}><section className="exercisePreviewSheet" onClick={e=>e.stopPropagation()}><div className="sheetHandle"/><button className="closeSheet" aria-label="Close exercise preview" onClick={onClose}><X/></button><div className="previewMedia">{url?<video src={url} controls playsInline preload="metadata"/>:<div className="videoMissing"><Video/><span>No demo video available</span></div>}</div><div className="previewDetails"><div className="row between"><div><span className="tag">{titleCase(exercise.equipment||'Exercise')}</span><h3>{titleCase(exercise.name)}</h3></div></div><p>{sentence(exercise.description||'Review the exercise demonstration and target muscles before adding it to the workout.')}</p><div className="chips">{[exercise.target,...(exercise.secondary_muscles||[])].filter(Boolean).map(m=><span key={m}>{titleCase(m)}</span>)}</div><details><summary>Instructions</summary>{(exercise.instructions||[]).length?<ol>{(exercise.instructions||[]).filter(Boolean).map((instruction,i)=><li key={i}>{sentence(instruction)}</li>)}</ol>:<p className="muted">No written instructions are stored for this exercise.</p>}</details><button className="primary wide" onClick={onAdd}>Add to Workout<Plus/></button></div></section></div>
 }
 function FmaClasses({events,setEvents,openSession,profile}:{events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;openSession:(e:CalendarEvent)=>void;profile:AthleteProfile}){
   const [classOptions,setClassOptions]=useState(() => storage('bbb_fma_classes', fmaClasses));
@@ -1504,74 +1532,53 @@ function FmaClasses({events,setEvents,openSession,profile}:{events:CalendarEvent
 }
 
 function Nutrition({profile,target,entries,setTargets,allTargets,setEntries,allEntries}:{profile:AthleteProfile;target:NutritionTarget;entries:NutritionEntry[];setTargets:(v:NutritionTarget[])=>void;allTargets:NutritionTarget[];setEntries:(v:NutritionEntry[])=>void;allEntries:NutritionEntry[]}){
-  const [date,setDate]=useState(todayISO());
-  const [targetDraft,setTargetDraft]=useState(target);
-  const [mealType,setMealType]=useState<MealType>('Breakfast');
-  const [name,setName]=useState(''); const [serving,setServing]=useState('');
-  const [calories,setCalories]=useState(''); const [protein,setProtein]=useState(''); const [carbs,setCarbs]=useState(''); const [fats,setFats]=useState(''); const [water,setWater]=useState('');
-  const [status,setStatus]=useState('');
+  const [date,setDate]=useState(todayISO()); const [targetDraft,setTargetDraft]=useState(target); const [showTargets,setShowTargets]=useState(false);
+  const [mealType,setMealType]=useState<MealType>('Breakfast'); const [name,setName]=useState(''); const [serving,setServing]=useState('');
+  const [calories,setCalories]=useState(''); const [protein,setProtein]=useState(''); const [carbs,setCarbs]=useState(''); const [fats,setFats]=useState(''); const [water,setWater]=useState(''); const [status,setStatus]=useState('');
   useEffect(()=>setTargetDraft(target),[target.id,target.calories,target.protein_g,target.carbs_g,target.fats_g,target.water_ml]);
-  const dayEntries=entries.filter(e=>dateOnly(e.entry_date)===dateOnly(date));
-  const totals=nutritionTotals(dayEntries);
+  const dayEntries=entries.filter(e=>dateOnly(e.entry_date)===dateOnly(date)); const totals=nutritionTotals(dayEntries);
   const remaining={calories:Math.max(0,target.calories-totals.calories),protein:Math.max(0,target.protein_g-totals.protein_g),carbs:Math.max(0,target.carbs_g-totals.carbs_g),fats:Math.max(0,target.fats_g-totals.fats_g),water:Math.max(0,target.water_ml-totals.water_ml)};
   const grouped=MEAL_TYPES.map(type=>({type,entries:dayEntries.filter(e=>e.meal_type===type)})).filter(g=>g.entries.length);
-  async function saveTargets(){
-    const optimistic={...targetDraft,athlete_id:profile.remote_id||profile.id,effective_date:date};
-    const localNext=[...allTargets.filter(t=>t.athlete_id!==profile.id&&t.athlete_id!==profile.remote_id),optimistic];setTargets(localNext);setStatus('Daily nutrition targets saved. Syncing to cloud…');
-    const saved=await saveRemoteNutritionTarget(optimistic,profile);
-    const next=[...allTargets.filter(t=>t.athlete_id!==profile.id&&t.athlete_id!==profile.remote_id),saved];setTargets(next);setStatus('Daily nutrition targets saved.');
-  }
-  async function addEntry(){
-    if(!name.trim()&&mealType!=='Hydration'){setStatus('Add a food or meal name.');return;}
-    const entry:NutritionEntry={id:crypto.randomUUID(),athlete_id:profile.remote_id||profile.id,entry_date:dateOnly(date),meal_type:mealType,name:name.trim()||'Water',serving:serving||undefined,calories:Number(calories||0),protein_g:Number(protein||0),carbs_g:Number(carbs||0),fats_g:Number(fats||0),water_ml:Number(water||0)};
-    setEntries([entry,...allEntries]);setName('');setServing('');setCalories('');setProtein('');setCarbs('');setFats('');setWater('');setStatus(`${entry.name} added. Saving to cloud…`);
-    const saved=await saveRemoteNutritionEntry(entry,profile);setEntries([saved,...allEntries.filter(item=>item.id!==entry.id)]);setStatus(saved.remote_id?`${entry.name} added and synced.`:`${entry.name} added on this device. Cloud save could not be confirmed.`);
-  }
+  const recentMeals=Array.from(new Map<string,NutritionEntry>(allEntries.filter(e=>e.meal_type!=='Hydration'&&e.name).map(e=>[e.name.toLowerCase(),e] as [string,NutritionEntry])).values()).slice(-6).reverse();
+  async function saveTargets(){const optimistic={...targetDraft,athlete_id:profile.remote_id||profile.id,effective_date:date};setTargets([...allTargets.filter(t=>t.athlete_id!==profile.id&&t.athlete_id!==profile.remote_id),optimistic]);setStatus('Targets saved.');const saved=await saveRemoteNutritionTarget(optimistic,profile);setTargets([...allTargets.filter(t=>t.athlete_id!==profile.id&&t.athlete_id!==profile.remote_id),saved]);setShowTargets(false);}
+  async function addEntry(){if(!name.trim()&&mealType!=='Hydration'){setStatus('Add a food or meal name.');return;}const entry:NutritionEntry={id:crypto.randomUUID(),athlete_id:profile.remote_id||profile.id,entry_date:dateOnly(date),meal_type:mealType,name:name.trim()||'Water',serving:serving||undefined,calories:Number(calories||0),protein_g:Number(protein||0),carbs_g:Number(carbs||0),fats_g:Number(fats||0),water_ml:Number(water||0)};setEntries([entry,...allEntries]);setName('');setServing('');setCalories('');setProtein('');setCarbs('');setFats('');setWater('');setStatus(`${entry.name} added.`);const saved=await saveRemoteNutritionEntry(entry,profile);setEntries([saved,...allEntries.filter(item=>item.id!==entry.id)]);}
   function removeEntry(entry:NutritionEntry){setEntries(allEntries.filter(e=>e.id!==entry.id&&e.remote_id!==entry.remote_id));void deleteRemoteNutritionEntry(entry);}
-  function quickWater(amount:number){setMealType('Hydration');setName('Water');setWater(String(amount));setCalories('0');setProtein('0');setCarbs('0');setFats('0');}
-  return <div className="nutritionV4">
-    <section className="nutritionHero"><div><span className="eyebrow">Nutrition</span><h2>Fuel Progress</h2><p>Better food. A stronger you.</p></div><div className="nutritionArt"><Apple/><span>Train<br/>Eat<br/>Recover<br/>Repeat</span></div></section>
-    <section className="featureCard nutritionToday"><div className="row between"><h3>Today's Nutrition</h3><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div><div className="nutritionRings"><MetricRing value={totals.protein_g} target={target.protein_g} label="Protein" suffix="g" tone="green"/><MetricRing value={totals.calories} target={target.calories} label="Calories" suffix="" tone="orange"/><MetricRing value={totals.carbs_g} target={target.carbs_g} label="Carbs" suffix="g" tone="orange"/><MetricRing value={totals.fats_g} target={target.fats_g} label="Fats" suffix="g" tone="yellow"/><MetricRing value={Math.round(totals.water_ml/100)/10} target={Math.round(target.water_ml/100)/10} label="Water" suffix="L" tone="blue"/></div></section>
+  async function addWater(amount:number){const entry:NutritionEntry={id:crypto.randomUUID(),athlete_id:profile.remote_id||profile.id,entry_date:dateOnly(date),meal_type:'Hydration',name:'Water',calories:0,protein_g:0,carbs_g:0,fats_g:0,water_ml:amount};setEntries([entry,...allEntries]);const saved=await saveRemoteNutritionEntry(entry,profile);setEntries([saved,...allEntries.filter(item=>item.id!==entry.id)]);}
+  function repeatMeal(entry:NutritionEntry){setMealType(entry.meal_type);setName(entry.name);setServing(entry.serving||'');setCalories(String(entry.calories||''));setProtein(String(entry.protein_g||''));setCarbs(String(entry.carbs_g||''));setFats(String(entry.fats_g||''));setWater(String(entry.water_ml||''));}
+  const bars=[['Protein',totals.protein_g,target.protein_g,'g'],['Calories',totals.calories,target.calories,''],['Carbs',totals.carbs_g,target.carbs_g,'g'],['Fats',totals.fats_g,target.fats_g,'g'],['Water',Math.round(totals.water_ml/100)/10,Math.round(target.water_ml/100)/10,'L']] as const;
+  return <div className="nutritionV4 compactNutrition">
+    <section className="featureCard nutritionTodayCompact"><div className="row between"><div><h3>Today</h3><p className="muted">{dayEntries.length?'Progress against your daily targets.':'Nothing logged yet.'}</p></div><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div><div className="nutritionBars">{bars.map(([label,value,targetValue,suffix])=><div className="nutritionBar" key={label}><div><b>{label}</b><span>{value}{suffix} / {targetValue}{suffix}</span></div><div className="progress"><i style={{width:`${clampPercent(Number(value),Number(targetValue))}%`}}/></div></div>)}</div><div className="nutritionTopActions"><button className="primary" onClick={()=>{const el=document.getElementById('meal-logger');el?.scrollIntoView({behavior:'smooth'});}}><Plus/>Add meal</button><button onClick={()=>addWater(250)}><Droplets/>250 ml</button><button onClick={()=>addWater(500)}><Droplets/>500 ml</button><button onClick={()=>setShowTargets(v=>!v)}><Target/>Edit targets</button></div></section>
 
-    <section className="panel targetEditor"><div className="row between"><div><h3>Daily Targets</h3><p className="muted">Set targets that suit the athlete and current training phase.</p></div><Target/></div><div className="grid five"><label>Calories<input type="number" value={targetDraft.calories} onChange={e=>setTargetDraft({...targetDraft,calories:Number(e.target.value)})}/></label><label>Protein (g)<input type="number" value={targetDraft.protein_g} onChange={e=>setTargetDraft({...targetDraft,protein_g:Number(e.target.value)})}/></label><label>Carbs (g)<input type="number" value={targetDraft.carbs_g} onChange={e=>setTargetDraft({...targetDraft,carbs_g:Number(e.target.value)})}/></label><label>Fats (g)<input type="number" value={targetDraft.fats_g} onChange={e=>setTargetDraft({...targetDraft,fats_g:Number(e.target.value)})}/></label><label>Water (ml)<input type="number" value={targetDraft.water_ml} onChange={e=>setTargetDraft({...targetDraft,water_ml:Number(e.target.value)})}/></label></div><button type="button" className="primary" onClick={saveTargets}><Save/>Save targets</button></section>
+    <section id="meal-logger" className="panel mealLogger"><div className="row between"><div><h3>Add meal</h3><p className="muted">Log food or macros without leaving today’s screen.</p></div><Utensils/></div>{recentMeals.length>0&&<div className="recentMeals"><span>Recent</span>{recentMeals.map(entry=><button key={entry.id} onClick={()=>repeatMeal(entry)}>{entry.name}</button>)}</div>}<div className="mealTypeGrid">{MEAL_TYPES.filter(t=>t!=='Hydration').map(type=><button className={mealType===type?'active':''} onClick={()=>setMealType(type)} key={type}>{type==='Breakfast'?<Sun/>:type==='Lunch'?<Coffee/>:type==='Dinner'?<Utensils/>:<Apple/>}<b>{type}</b></button>)}</div><div className="grid three"><label className="fullSpan">Food / Meal Name<input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Chicken rice bowl"/></label><label>Serving<input value={serving} onChange={e=>setServing(e.target.value)} placeholder="e.g. 1 bowl"/></label><label>Calories<input type="number" inputMode="numeric" value={calories} onChange={e=>setCalories(e.target.value)}/></label><label>Protein (g)<input type="number" inputMode="decimal" value={protein} onChange={e=>setProtein(e.target.value)}/></label><label>Carbs (g)<input type="number" inputMode="decimal" value={carbs} onChange={e=>setCarbs(e.target.value)}/></label><label>Fats (g)<input type="number" inputMode="decimal" value={fats} onChange={e=>setFats(e.target.value)}/></label></div><button type="button" className="primary wide" onClick={addEntry}><Plus/>Log meal</button>{status&&<div className="status">{status}</div>}</section>
 
-    <section className="panel mealLogger"><div className="row between"><div><h3>Quick Add Meal</h3><p className="muted">Log food, macros or water throughout the day.</p></div><Utensils/></div><div className="mealTypeGrid">{MEAL_TYPES.map(type=><button className={mealType===type?'active':''} onClick={()=>setMealType(type)} key={type}>{type==='Breakfast'?<Sun/>:type==='Lunch'?<Coffee/>:type==='Dinner'?<Utensils/>:type==='Hydration'?<Droplets/>:<Apple/>}<b>{type}</b></button>)}</div><div className="grid three"><label className="fullSpan">Food / Meal Name<input value={name} onChange={e=>setName(e.target.value)} placeholder={mealType==='Hydration'?'Water':'e.g. Chicken rice bowl'}/></label><label>Serving<input value={serving} onChange={e=>setServing(e.target.value)} placeholder="e.g. 1 bowl"/></label><label>Calories<input type="number" value={calories} onChange={e=>setCalories(e.target.value)}/></label><label>Protein (g)<input type="number" value={protein} onChange={e=>setProtein(e.target.value)}/></label><label>Carbs (g)<input type="number" value={carbs} onChange={e=>setCarbs(e.target.value)}/></label><label>Fats (g)<input type="number" value={fats} onChange={e=>setFats(e.target.value)}/></label><label>Water (ml)<input type="number" value={water} onChange={e=>setWater(e.target.value)}/></label></div><div className="row actions"><button type="button" className="primary" onClick={addEntry}><Plus/>Add entry</button><button type="button" onClick={()=>quickWater(250)}><Droplets/>250 ml water</button><button type="button" onClick={()=>quickWater(500)}><Droplets/>500 ml water</button></div>{status&&<div className="status">{status}</div>}</section>
+    <section className="panel mealHistory"><h3>Today’s entries</h3>{grouped.length===0?<div className="emptyDraft compactEmptyState"><Utensils/><h4>Nothing logged yet</h4><p>Add a meal or water entry above.</p></div>:grouped.map(group=><div className="mealGroup" key={group.type}><div className="row between"><h4>{group.type}</h4><b>{group.entries.reduce((n,e)=>n+e.calories,0)} kcal</b></div>{group.entries.map(entry=><div className="nutritionEntryRow" key={entry.id}><div><b>{entry.name}</b><span>{entry.serving||'Entry'} · {entry.calories} kcal</span></div><div className="macroMini"><span>{entry.protein_g}g P</span><span>{entry.carbs_g}g C</span><span>{entry.fats_g}g F</span>{entry.water_ml>0&&<span>{entry.water_ml}ml</span>}</div><button className="dangerIcon" aria-label={`Delete ${entry.name}`} onClick={()=>removeEntry(entry)}><Trash2/></button></div>)}</div>)}</section>
 
-    <div className="nutritionContentGrid"><section className="panel mealHistory"><h3>Meals & Entries</h3>{grouped.length===0?<div className="emptyDraft"><Utensils/><h4>No nutrition entries</h4><p>Add the first meal or water entry for this day.</p></div>:grouped.map(group=><div className="mealGroup" key={group.type}><div className="row between"><h4>{group.type}</h4><b>{group.entries.reduce((n,e)=>n+e.calories,0)} kcal</b></div>{group.entries.map(entry=><div className="nutritionEntryRow" key={entry.id}><div><b>{entry.name}</b><span>{entry.serving||'Entry'} · {entry.calories} kcal</span></div><div className="macroMini"><span>{entry.protein_g}g P</span><span>{entry.carbs_g}g C</span><span>{entry.fats_g}g F</span>{entry.water_ml>0&&<span>{entry.water_ml}ml</span>}</div><button className="dangerIcon" onClick={()=>removeEntry(entry)}><Trash2/></button></div>)}</div>)}</section>
-      <section className="featureCard remainingCard"><div className="cardLabel"><Target/><span>Remaining Today</span></div><div className="remainingGrid"><div><b>{remaining.protein}g</b><span>Protein</span></div><div><b>{remaining.calories}</b><span>Calories</span></div><div><b>{remaining.carbs}g</b><span>Carbs</span></div><div><b>{remaining.fats}g</b><span>Fats</span></div><div><b>{(remaining.water/1000).toFixed(1)}L</b><span>Water</span></div></div></section>
-    </div>
+    <section className="featureCard remainingCard"><div className="cardLabel"><Target/><span>Remaining Today</span></div><div className="remainingGrid"><div><b>{remaining.protein}g</b><span>Protein</span></div><div><b>{remaining.calories}</b><span>Calories</span></div><div><b>{remaining.carbs}g</b><span>Carbs</span></div><div><b>{remaining.fats}g</b><span>Fats</span></div><div><b>{(remaining.water/1000).toFixed(1)}L</b><span>Water</span></div></div></section>
+
+    {showTargets&&<section className="panel targetEditor"><div className="row between"><div><h3>Daily targets</h3><p className="muted">Update only when training or nutrition goals change.</p></div><button className="iconButton" aria-label="Close target editor" onClick={()=>setShowTargets(false)}><X/></button></div><div className="grid five"><label>Calories<input type="number" inputMode="numeric" value={targetDraft.calories} onChange={e=>setTargetDraft({...targetDraft,calories:Number(e.target.value)})}/></label><label>Protein (g)<input type="number" inputMode="decimal" value={targetDraft.protein_g} onChange={e=>setTargetDraft({...targetDraft,protein_g:Number(e.target.value)})}/></label><label>Carbs (g)<input type="number" inputMode="decimal" value={targetDraft.carbs_g} onChange={e=>setTargetDraft({...targetDraft,carbs_g:Number(e.target.value)})}/></label><label>Fats (g)<input type="number" inputMode="decimal" value={targetDraft.fats_g} onChange={e=>setTargetDraft({...targetDraft,fats_g:Number(e.target.value)})}/></label><label>Water (ml)<input type="number" inputMode="numeric" value={targetDraft.water_ml} onChange={e=>setTargetDraft({...targetDraft,water_ml:Number(e.target.value)})}/></label></div><button type="button" className="primary" onClick={saveTargets}><Save/>Save targets</button></section>}
   </div>
 }
 
 function Stats({logs,events,profile,metrics}:{logs:WorkoutLog[];events:CalendarEvent[];profile:AthleteProfile;metrics:AthleteMetric[]}){
-  const [period,setPeriod]=useState<'week'|'month'|'three'>('month');
-  const periodDays=period==='week'?7:period==='month'?30:90;
-  const cutoff=iso(addDays(new Date(),-periodDays+1));
-  const filteredLogs=logs.filter(l=>dateOnly(l.date)>=cutoff);
-  const filteredEvents=events.filter(e=>dateOnly(e.date)>=cutoff);
-  const setHistory=filteredLogs.flatMap(log=>(log.sets||[]).map(set=>{const weight=parseNumeric(set.weight);const reps=parseNumeric(set.reps);return {id:`${log.id}-${set.set_number}`,date:dateOnly(log.date),exercise_id:log.exercise_id,exercise_name:log.exercise_name,weight,reps,volume:weight*reps,estimated1rm:estimateOneRepMax(weight,reps),completed:set.completed!==false};})).filter(row=>row.weight>0&&row.reps>0&&row.completed);
-  const exerciseNames=Array.from(new Set(setHistory.map(s=>s.exercise_name))).sort();
-  const [selectedExercise,setSelectedExercise]=useState(exerciseNames[0]||'');
+  const [period,setPeriod]=useState<'week'|'month'|'three'>('month'); const periodDays=period==='week'?7:period==='month'?30:90; const cutoff=iso(addDays(new Date(),-periodDays+1));
+  const filteredLogs=logs.filter(l=>dateOnly(l.date)>=cutoff); const filteredEvents=events.filter(e=>dateOnly(e.date)>=cutoff);
+  const setHistory=filteredLogs.flatMap(log=>(log.sets||[]).map(set=>{const weight=parseNumeric(set.weight);const reps=parseNumeric(set.reps);return{id:`${log.id}-${set.set_number}`,date:dateOnly(log.date),exercise_name:log.exercise_name,weight,reps,volume:weight*reps,estimated1rm:estimateOneRepMax(weight,reps),completed:set.completed!==false};})).filter(row=>row.weight>0&&row.reps>0&&row.completed);
+  const exerciseNames=Array.from(new Set(setHistory.map(s=>s.exercise_name))).sort(); const [selectedExercise,setSelectedExercise]=useState(exerciseNames[0]||'');
   useEffect(()=>{if(exerciseNames.length&&!exerciseNames.includes(selectedExercise))setSelectedExercise(exerciseNames[0]);},[exerciseNames.join('|')]);
-  const selectedHistory=setHistory.filter(s=>s.exercise_name===selectedExercise).sort((a,b)=>a.date.localeCompare(b.date));
-  const chartData=Array.from(new Map(selectedHistory.map(row=>[row.date,row])).values()).map(row=>({date:row.date.slice(5),weight:row.weight,estimated1rm:row.estimated1rm}));
+  const selectedHistory=setHistory.filter(s=>s.exercise_name===selectedExercise).sort((a,b)=>a.date.localeCompare(b.date)); const chartData=Array.from(new Map(selectedHistory.map(row=>[row.date,row])).values()).map(row=>({date:row.date.slice(5),weight:row.weight,estimated1rm:row.estimated1rm}));
   const bestByExercise=exerciseNames.map(name=>{const rows=setHistory.filter(s=>s.exercise_name===name);const best=rows.reduce((max,row)=>row.estimated1rm>max.estimated1rm?row:max,rows[0]);return best?{name,best}:null}).filter(Boolean).sort((a:any,b:any)=>b.best.estimated1rm-a.best.estimated1rm).slice(0,5) as {name:string;best:any}[];
-  const totalVolume=setHistory.reduce((n,row)=>n+row.volume,0);
-  const recentPRs=[...bestByExercise].slice(0,3);
-  const weightUnit=getWeightUnit(profile);
+  const totalVolume=setHistory.reduce((n,row)=>n+row.volume,0); const weightUnit=getWeightUnit(profile);
   const athleteMetrics=metrics.filter(m=>m.athlete_id===profile.remote_id||m.athlete_id===profile.id).sort((a,b)=>dateOnly(a.metric_date).localeCompare(dateOnly(b.metric_date)));
-  const weightTrend=athleteMetrics.filter(m=>dateOnly(m.metric_date)>=cutoff&&m.weight_kg).map(m=>({date:dateOnly(m.metric_date).slice(5),weight:weightUnit==='st'?kgToStoneDecimal(m.weight_kg):Number(m.weight_kg||0)}));
-  const volumeByDay=Array.from({length:Math.min(periodDays,14)},(_,i)=>{const date=iso(addDays(new Date(),-Math.min(periodDays,14)+1+i));return {date:date.slice(5),volume:Math.round(setHistory.filter(s=>s.date===date).reduce((n,s)=>n+s.volume,0))}});
-  const completedSessions=filteredEvents.filter(e=>e.status==='completed').length;
-  const streak=calcStreak(logs,events);
-  return <div className="progressV4">
-    <div className="periodTabs"><button className={period==='week'?'active':''} onClick={()=>setPeriod('week')}>Week</button><button className={period==='month'?'active':''} onClick={()=>setPeriod('month')}>Month</button><button className={period==='three'?'active':''} onClick={()=>setPeriod('three')}>3 Months</button></div>
-    <div className="progressTopGrid"><section className="featureCard weightTrendCard"><div className="cardLabel"><Weight/><span>Body Weight Trend</span></div><strong>{formatWeight(profile.weight_kg,weightUnit)}</strong>{weightTrend.length>1&&<span className="trendChange">{(weightTrend[weightTrend.length-1].weight-weightTrend[0].weight).toFixed(1)} {weightUnit==='st'?'st':'kg'} in period</span>}<div className="miniChart"><ResponsiveContainer width="100%" height="100%"><LineChart data={weightTrend}><XAxis dataKey="date"/><YAxis domain={['dataMin - 1','dataMax + 1']}/><Tooltip/><Line type="monotone" dataKey="weight" stroke="#36eda0" strokeWidth={3}/></LineChart></ResponsiveContainer></div></section>
-      <section className="featureCard oneRmCard"><div className="cardLabel"><BarChart3/><span>Estimated 1RM</span></div>{bestByExercise.length?bestByExercise.slice(0,4).map(item=><div className="oneRmRow" key={item.name}><span>{item.name}</span><b>{item.best.estimated1rm} kg</b></div>):<p className="muted">Log weighted sets to calculate estimated one-rep max values.</p>}</section></div>
-
-    <section className="panel liftProgressPanel"><div className="row between"><div><h3>Exercise Progress</h3><p className="muted">Track working weight and estimated one-rep max from logged sets.</p></div><select value={selectedExercise} onChange={e=>setSelectedExercise(e.target.value)}><option value="">Choose exercise</option>{exerciseNames.map(name=><option key={name}>{name}</option>)}</select></div>{selectedExercise&&chartData.length?<div className="liftChartGrid"><div className="chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip/><Line type="monotone" dataKey="weight" stroke="#38eda0" strokeWidth={3} name="Weight kg"/><Line type="monotone" dataKey="estimated1rm" stroke="#3aa9ff" strokeWidth={2} name="Estimated 1RM"/></LineChart></ResponsiveContainer></div><div className="recentSets"><h4>Recent Sets</h4>{selectedHistory.slice(-6).reverse().map(row=><div key={row.id}><span>{row.date}</span><b>{row.weight}kg × {row.reps}</b><em>1RM {row.estimated1rm}kg</em></div>)}</div></div>:<div className="emptyDraft"><Dumbbell/><h4>No weighted logs yet</h4><p>Complete and save weighted exercise sets to populate progress charts.</p></div>}</section>
-
-    <div className="progressBottomGrid"><section className="featureCard recentPrCard"><div className="cardLabel"><Trophy/><span>Recent PRs</span></div>{recentPRs.length?recentPRs.map(item=><div className="prRow" key={item.name}><Award/><div><b>{item.name}</b><span>{item.best.weight}kg × {item.best.reps}</span></div><em>1RM {item.best.estimated1rm}kg</em></div>):<p className="muted">Personal records will appear after weighted sets are logged.</p>}</section><section className="featureCard volumeCard"><div className="cardLabel"><BarChart3/><span>Volume Lifted</span></div><strong>{Math.round(totalVolume).toLocaleString('en-GB')} kg</strong><span>{completedSessions} sessions · {streak} day streak</span><div className="miniChart"><ResponsiveContainer width="100%" height="100%"><BarChart data={volumeByDay}><XAxis dataKey="date"/><Tooltip/><Bar dataKey="volume" fill="#35dca1"/></BarChart></ResponsiveContainer></div></section></div>
+  const periodMetrics=athleteMetrics.filter(m=>dateOnly(m.metric_date)>=cutoff&&m.weight_kg); const weightTrend=periodMetrics.map(m=>({date:dateOnly(m.metric_date).slice(5),weight:weightUnit==='st'?kgToStoneDecimal(m.weight_kg):Number(m.weight_kg||0)})); const latestMetric=athleteMetrics[athleteMetrics.length-1];
+  const weekStart=iso(startOfWeek()); const weekEnd=iso(addDays(weekStart,6)); const thisWeek=events.filter(e=>dateOnly(e.date)>=weekStart&&dateOnly(e.date)<=weekEnd); const weekCompleted=thisWeek.filter(e=>e.status==='completed').length; const weekPct=clampPercent(weekCompleted,Math.max(1,thisWeek.length));
+  return <div className="progressV4 compactProgressPage"><div className="periodTabs"><button className={period==='week'?'active':''} onClick={()=>setPeriod('week')}>Week</button><button className={period==='month'?'active':''} onClick={()=>setPeriod('month')}>Month</button><button className={period==='three'?'active':''} onClick={()=>setPeriod('three')}>3 Months</button></div>
+    <div className="progressTopGrid"><section className="featureCard weightTrendCard"><div className="cardLabel"><Weight/><span>Body weight</span></div><strong>{latestMetric?.weight_kg?formatWeight(latestMetric.weight_kg,weightUnit):formatWeight(profile.weight_kg,weightUnit)}</strong><span className="latestMetricDate">{latestMetric?`Last recorded ${dayLabel(latestMetric.metric_date)}`:'No dated measurement yet'}</span>{weightTrend.length>=2?<div className="miniChart"><ResponsiveContainer width="100%" height="100%"><LineChart data={weightTrend}><XAxis dataKey="date"/><YAxis domain={['dataMin - 1','dataMax + 1']}/><Tooltip/><Line type="monotone" dataKey="weight" stroke="#36eda0" strokeWidth={3}/></LineChart></ResponsiveContainer></div>:<div className="insightPrompt">Log at least two body-weight measurements to create a trend.</div>}</section>
+      <section className="featureCard weeklyConsistencyCard"><div className="cardLabel"><CalendarDays/><span>Weekly consistency</span></div><strong>{weekCompleted}/{thisWeek.length||0}</strong><span>planned sessions completed</span><div className="progress"><i style={{width:`${weekPct}%`}}/></div><em>{weekPct}% this week</em></section></div>
+    {setHistory.length===0?<section className="panel progressEmptyUnified"><Dumbbell/><div><h3>Strength progress will appear here</h3><p>Complete weighted sets in a workout to unlock working-weight trends, estimated 1RM, volume and personal records.</p></div></section>:<>
+      <section className="featureCard oneRmSummary"><div className="cardLabel"><BarChart3/><span>Estimated 1RM</span></div>{bestByExercise.slice(0,4).map(item=><div className="oneRmRow" key={item.name}><span>{item.name}</span><b>{item.best.estimated1rm} kg</b></div>)}</section>
+      <section className="panel liftProgressPanel"><div className="row between"><div><h3>Exercise progress</h3><p className="muted">Working weight and estimated 1RM.</p></div><select value={selectedExercise} onChange={e=>setSelectedExercise(e.target.value)}>{exerciseNames.map(name=><option key={name}>{name}</option>)}</select></div><div className="liftChartGrid"><div className="chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip/><Line type="monotone" dataKey="weight" stroke="#38eda0" strokeWidth={3} name="Weight kg"/><Line type="monotone" dataKey="estimated1rm" stroke="#3aa9ff" strokeWidth={2} name="Estimated 1RM"/></LineChart></ResponsiveContainer></div><div className="recentSets"><h4>Recent sets</h4>{selectedHistory.slice(-6).reverse().map(row=><div key={row.id}><span>{row.date}</span><b>{row.weight}kg × {row.reps}</b><em>1RM {row.estimated1rm}kg</em></div>)}</div></div></section>
+      <section className="featureCard volumeCard"><div className="cardLabel"><BarChart3/><span>Volume lifted</span></div><strong>{Math.round(totalVolume).toLocaleString('en-GB')} kg</strong><span>{setHistory.length} completed weighted sets in this period</span></section>
+    </>}
   </div>
 }
 function achievementCount(type: AchievementType, logs: WorkoutLog[], events: CalendarEvent[]) {
@@ -1817,6 +1824,6 @@ function Importer({setExercises,reloadSupabase,exercises}:{setExercises:(e:Exerc
 }
 function MissingVideoRow({exercise,exercises,setExercises}:{exercise:Exercise; exercises:Exercise[]; setExercises:(e:Exercise[])=>void}){ const [url,setUrl]=useState(''); async function save(){ const updated={...exercise,video_url:url,has_video:!!url}; setExercises(exercises.map(e=>e.exercise_id===exercise.exercise_id?updated:e)); if(supabase) await supabase.from('exercises').upsert({...updated, exercise_type:updated.category||'general', archived:false, is_archived:false},{onConflict:'exercise_id'}); } return <div className="missingRow"><b>{titleCase(exercise.name)}</b><span>{titleCase(bodyOf(exercise))} · {titleCase(exercise.target)}</span><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="Paste replacement video URL"/><button onClick={save} disabled={!url}>Save URL</button></div> }
 
-function VideoModal({title,url,onClose}:{title:string;url:string;onClose:()=>void}){ return <div className="modalBackdrop" onClick={onClose}><div className="videoModal" onClick={e=>e.stopPropagation()}><div className="row between"><h3>{title}</h3><button className="iconButton" onClick={onClose}><X size={20}/></button></div>{url ? <video src={url} controls autoPlay playsInline/> : <p>No video URL available.</p>}</div></div> }
+function VideoModal({title,url,onClose}:{title:string;url:string;onClose:()=>void}){ return <div className="modalBackdrop" onClick={onClose} role="presentation"><div className="videoModal" role="dialog" aria-modal="true" aria-label={`${title} demonstration`} onClick={e=>e.stopPropagation()}><div className="row between videoModalHeader"><h3>{title}</h3><button className="iconButton" aria-label="Close demo" onClick={onClose}><X size={20}/></button></div>{url ? <video src={url} controls autoPlay playsInline/> : <p>No video URL available.</p>}</div></div> }
 
 createRoot(document.getElementById('root')!).render(<App />);
