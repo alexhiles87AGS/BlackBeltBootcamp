@@ -32,7 +32,7 @@ const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[];
   { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'], group: 'Admin' },
 ];
 
-const APP_VERSION = '4.0.0-major-ui-nutrition-progress';
+const APP_VERSION = '4.0.2-interaction-sync-fix';
 
 const cleanProfiles: AthleteProfile[] = [
   {
@@ -804,7 +804,7 @@ async function saveRemoteWorkoutLog(log: WorkoutLog, athlete: AthleteProfile | u
     };
     const { data, error } = await supabase.from('workout_logs').insert(row).select('*').single();
     if (error) throw error;
-    return { ...log, id: data?.id || log.id };
+    return { ...log, id: data?.id || log.id, remote_id: data?.id || undefined } as WorkoutLog;
   } catch (err) { console.warn('Supabase workout log save skipped:', err); return log; }
 }
 
@@ -929,6 +929,15 @@ function App() {
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const syncInFlight = useRef(false);
   const syncTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('drawer-open', drawerOpen);
+    document.body.style.overflow = drawerOpen ? 'hidden' : '';
+    return () => {
+      document.documentElement.classList.remove('drawer-open');
+      document.body.style.overflow = '';
+    };
+  }, [drawerOpen]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -1070,38 +1079,13 @@ function App() {
 
   const requestSync = useCallback((reason='auto') => {
     if (syncTimer.current) window.clearTimeout(syncTimer.current);
-    syncTimer.current = window.setTimeout(() => loadFromSupabase(reason), reason === 'realtime' ? 350 : 80);
+    syncTimer.current = window.setTimeout(() => loadFromSupabase(reason), 80);
   }, [loadFromSupabase]);
 
-  useEffect(() => { if (currentUser) requestSync('login'); }, [currentUser?.id, requestSync]);
-
-  useEffect(() => {
-    if (!currentUser) return;
-    const refresh = () => requestSync('focus');
-    const onVisibility = () => { if (document.visibilityState === 'visible') requestSync('visible'); };
-    window.addEventListener('focus', refresh);
-    window.addEventListener('online', refresh);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('online', refresh);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [currentUser?.id, requestSync]);
-
-  useEffect(() => {
-    if (!currentUser || !['dashboard','calendar','today','nutrition','stats','admin'].includes(page)) return;
-    requestSync(`page:${page}`);
-  }, [page, currentUser?.id, requestSync]);
-
-  useEffect(() => {
-    if (!supabase || !currentUser) return;
-    const tables = ['training_sessions','workout_programmes','workout_programme_exercises','workout_logs','athlete_metrics','badges','app_settings','nutrition_targets','nutrition_entries'];
-    const channel = supabase.channel(`bbb-v4-${currentUser.id}`);
-    tables.forEach(table => channel.on('postgres_changes' as any, { event:'*', schema:'public', table }, () => requestSync('realtime')));
-    channel.subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [currentUser?.id, requestSync]);
+  // Controlled cloud refresh: load once when the authenticated user opens/refreshes the app.
+  // Further refreshes happen only when the user presses the sync control. This prevents
+  // background refreshes from overwriting an in-progress form or completion action.
+  useEffect(() => { if (currentUser) requestSync('open'); }, [currentUser?.id, requestSync]);
 
   const visibleEvents = useMemo(() => currentUser ? events.filter(e => isEventVisibleForUser(e, currentUser)) : [], [events, currentUser]);
   const visibleLogs = useMemo(() => {
@@ -1124,15 +1108,15 @@ function App() {
 
   return <div className="appShell v4Shell">
     <header className="topbar v4Topbar">
-      <button className="iconButton navTrigger" onClick={()=>setDrawerOpen(true)} aria-label="Open menu"><Menu size={25}/></button>
-      <button className="topBrand" onClick={()=>go('dashboard')} aria-label="Go home"><span className="brandShield"><Shield size={24}/></span><div><b>BlackBeltBootcamp <i>V4.0</i></b><span>Discipline builds freedom</span></div></button>
+      <button className="iconButton navTrigger" onClick={()=>setDrawerOpen(true)} aria-label="Open menu" aria-expanded={drawerOpen} aria-controls="app-drawer"><Menu size={25}/></button>
+      <button className="topBrand" onClick={()=>go('dashboard')} aria-label="Go home"><span className="brandShield"><Shield size={24}/></span><div><b>BlackBeltBootcamp <i>V4.0.2</i></b><span>Discipline builds freedom</span></div></button>
       <button className="syncPill" onClick={()=>requestSync('manual')} disabled={syncing}><Cloud size={16}/><span>{syncing ? 'Syncing…' : displaySyncTime(lastSynced)}</span><RefreshCw size={15} className={syncing ? 'spinning' : ''}/></button>
       <button className="profileChip" onClick={()=>go('profile')}><span className="avatar">{profile.profile_photo_url ? <img src={profile.profile_photo_url} alt=""/> : getInitials(profile.name)}</span><span><b>{currentUser.name}</b><em>{titleCase(currentUser.role)}</em></span><ChevronRight size={17}/></button>
     </header>
 
     {drawerOpen && <div className="drawerBackdrop" onClick={()=>setDrawerOpen(false)} />}
-    <aside className={`drawer v4Drawer ${drawerOpen ? 'open' : ''}`}>
-      <div className="drawerHead"><div className="brand"><span className="brandShield"><Shield size={24}/></span><div><h1>BlackBeltBootcamp</h1><span>Training OS V4.0</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
+    <aside id="app-drawer" className={`drawer v4Drawer ${drawerOpen ? 'open' : ''}`} aria-hidden={!drawerOpen}>
+      <div className="drawerHead"><div className="brand"><span className="brandShield"><Shield size={24}/></span><div><h1>BlackBeltBootcamp</h1><span>Training OS V4.0.2</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
       <button className="drawerUser drawerUserButton" onClick={()=>go('profile')}><span className="avatar large">{getInitials(profile.name)}</span><span className="drawerIdentity"><b>{currentUser.name}</b><span>{currentUser.email}</span><em>{titleCase(currentUser.role)} profile</em></span><ChevronRight size={18}/></button>
       <nav>{['Athlete','Training','Progress','Admin'].map(group => {
         const links = visibleNav.filter(n=>n.group===group);
@@ -1164,7 +1148,7 @@ function App() {
       <button className={['calendar','today','builder','fma','session'].includes(page)?'active':''} onClick={()=>go('calendar')}><Activity/><span>Training</span></button>
       <button className={page==='nutrition'?'active':''} onClick={()=>go('nutrition')}><Utensils/><span>Nutrition</span></button>
       <button className={['stats','badges'].includes(page)?'active':''} onClick={()=>go('stats')}><Trophy/><span>Progress</span></button>
-      <button onClick={()=>setDrawerOpen(true)}><MoreHorizontal/><span>More</span></button>
+      <button onClick={()=>setDrawerOpen(true)} aria-expanded={drawerOpen} aria-controls="app-drawer"><MoreHorizontal/><span>More</span></button>
     </nav>
     {video && <VideoModal title={video.title} url={video.url} onClose={()=>setVideo(null)} />}
   </div>;
@@ -1202,7 +1186,7 @@ function LoginScreen({setCurrentUser}:{users:AppUser[]; setCurrentUser:(u:AppUse
     const {error}=await supabase.auth.resetPasswordForEmail(target,{redirectTo:window.location.origin});
     setStatus(error?error.message:`Password reset email sent to ${target}.`);
   }
-  return <main className="loginPage v4Login"><section className="loginVisual"><span className="brandShield giant"><Shield/></span><span className="eyebrow">BlackBeltBootcamp V4.0</span><h1>Discipline builds freedom.</h1><p>A secure training hub for programmes, progress, nutrition and performance.</p><div className="loginPromises"><span><CheckCircle2/>Cloud synced</span><span><CheckCircle2/>Coach assigned</span><span><CheckCircle2/>Athlete focused</span></div></section><section className="loginCard"><div className="loginBrand"><span className="brandShield"><Shield/></span><div><h2>Welcome back</h2><p>Sign in to continue your training.</p></div></div><form onSubmit={login} className="loginForm"><label>Email<input value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com"/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password"/></label>{status&&<div className={`status ${/unable|error|invalid/i.test(status)?'error':''}`}>{status}</div>}<button className="primary big wide" type="submit" disabled={!email||!password||busy}>{busy?'Signing in…':'Sign in'}<ChevronRight/></button></form><button className="forgotButton" onClick={()=>setShowReset(v=>!v)}>Forgot your password?</button>{showReset&&<div className="passwordResetBox"><label>Password reset email<input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="Use login email if blank"/></label><button onClick={resetPassword}><KeyRound size={16}/>Send reset link</button></div>}<p className="secureNote"><Shield size={15}/>Secure Supabase authentication · data follows you across devices</p></section></main>
+  return <main className="loginPage v4Login"><section className="loginVisual"><span className="brandShield giant"><Shield/></span><span className="eyebrow">BlackBeltBootcamp V4.0.2</span><h1>Discipline builds freedom.</h1><p>A secure training hub for programmes, progress, nutrition and performance.</p><div className="loginPromises"><span><CheckCircle2/>Cloud synced</span><span><CheckCircle2/>Coach assigned</span><span><CheckCircle2/>Athlete focused</span></div></section><section className="loginCard"><div className="loginBrand"><span className="brandShield"><Shield/></span><div><h2>Welcome back</h2><p>Sign in to continue your training.</p></div></div><form onSubmit={login} className="loginForm"><label>Email<input value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com"/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password"/></label>{status&&<div className={`status ${/unable|error|invalid/i.test(status)?'error':''}`}>{status}</div>}<button className="primary big wide" type="submit" disabled={!email||!password||busy}>{busy?'Signing in…':'Sign in'}<ChevronRight/></button></form><button className="forgotButton" onClick={()=>setShowReset(v=>!v)}>Forgot your password?</button>{showReset&&<div className="passwordResetBox"><label>Password reset email<input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="Use login email if blank"/></label><button onClick={resetPassword}><KeyRound size={16}/>Send reset link</button></div>}<p className="secureNote"><Shield size={15}/>Secure Supabase authentication · data follows you across devices</p></section></main>
 }
 function Dashboard({logs,events,badges,profile,focusText,target,nutritionEntries,setPage,openSession}:{logs:WorkoutLog[];events:CalendarEvent[];badges:Badge[];profile:AthleteProfile;focusText:string;target:NutritionTarget;nutritionEntries:NutritionEntry[];setPage:(p:Page)=>void;openSession:(e:CalendarEvent)=>void}) {
   const today = todayISO();
@@ -1301,15 +1285,22 @@ function TrainingCalendar({events,allEvents,setEvents,openSession,currentUser,pr
   const visibleWeek = Array.from({length:7}, (_,i)=>addDays(baseStart, i));
   const [selectedDate,setSelectedDate]=useState(()=>todayISO());
   useEffect(()=>{ if(!visibleWeek.some(d=>iso(d)===selectedDate)) setSelectedDate(iso(visibleWeek[0])); },[weekOffset]);
-  const [newDate,setNewDate]=useState(todayISO()); const [newTime,setNewTime]=useState('18:00'); const [newTitle,setNewTitle]=useState('Training Session'); const [newType,setNewType]=useState<SessionType>('Gym'); const [newPlanId,setNewPlanId]=useState('none');
+  const [newDate,setNewDate]=useState(todayISO()); const [newTime,setNewTime]=useState('18:00'); const [newTitle,setNewTitle]=useState('Training Session'); const [newType,setNewType]=useState<SessionType>('Gym'); const [newPlanId,setNewPlanId]=useState('none'); const [addStatus,setAddStatus]=useState(''); const [adding,setAdding]=useState(false);
   const selectedEvents=events.filter(e=>dateOnly(e.date)===selectedDate).sort((a,b)=>(normaliseTime(a.time)||'').localeCompare(normaliseTime(b.time)||''));
   const selectedEvent=selectedEvents[0];
   async function add(){
+    if (adding) return;
     const plan = plans.find(p=>p.id===newPlanId);
     const event: CalendarEvent = {id:crypto.randomUUID(), date:dateOnly(newDate), time:normaliseTime(newTime), title: plan?.name || newTitle, type: plan?.session_type || newType, status:'planned', workout_plan_id: plan?.id, athlete_id: currentUser.athlete_id || profile.id, athlete_email: currentUser.email, athlete_name: currentUser.name};
-    const synced = await saveRemoteSession(event, plan, profile);
-    setEvents([synced, ...allEvents.filter(e=>e.id!==synced.id && e.remote_id!==synced.remote_id)]);
+    setAdding(true); setAddStatus('Adding session…');
+    // Optimistic UI: show the session immediately rather than waiting for the network.
+    setEvents([event, ...allEvents.filter(e=>e.id!==event.id)]);
     setSelectedDate(dateOnly(newDate));
+    try {
+      const synced = await saveRemoteSession(event, plan, profile);
+      setEvents([synced, ...allEvents.filter(e=>e.id!==event.id && e.id!==synced.id && e.remote_id!==synced.remote_id)]);
+      setAddStatus(synced.remote_id ? 'Session added and saved to the cloud.' : 'Session added on this device. Cloud save could not be confirmed — press Sync after checking your connection.');
+    } finally { setAdding(false); }
   }
   const weekLabel=`${dayLabel(visibleWeek[0])} – ${dayLabel(visibleWeek[6])}`;
   return <div className="trainingCalendarV4">
@@ -1326,7 +1317,7 @@ function TrainingCalendar({events,allEvents,setEvents,openSession,currentUser,pr
 
     {selectedEvent && <section className="featureCard sessionPeek"><div><span className={classNameForType(selectedEvent.type)}>{selectedEvent.class_name?'Class':selectedEvent.type}</span><h3>{selectedEvent.title}</h3><p><CalendarDays size={16}/>{dayLabel(selectedEvent.date)} <Clock size={16}/>{selectedEvent.time || 'Time TBC'}</p></div><button className="primary" onClick={()=>openSession(selectedEvent)}>Open session<ChevronRight size={17}/></button></section>}
 
-    <section className="panel compact addSessionPanel"><div className="row between"><div><h3>Add Session</h3><p className="muted">Add a class, ad-hoc session or an existing saved workout to this profile.</p></div><Plus/></div><div className="formGrid calendarForm"><label>Date<input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)}/></label><label>Time<input type="time" value={newTime} onChange={e=>setNewTime(e.target.value)}/></label><label>Type<select value={newType} onChange={e=>setNewType(e.target.value as SessionType)}>{sessionTypes.map(t=><option key={t}>{t}</option>)}</select></label><label>Saved Workout<select value={newPlanId} onChange={e=>setNewPlanId(e.target.value)}><option value="none">No saved workout</option>{plans.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label className="fullSpan">Title<input value={newTitle} onChange={e=>setNewTitle(e.target.value)}/></label></div><div className="formActions"><button className="primary wide" onClick={add}><Plus size={16}/>Add to calendar</button></div></section>
+    <section className="panel compact addSessionPanel"><div className="row between"><div><h3>Add Session</h3><p className="muted">Add a class, ad-hoc session or an existing saved workout to this profile.</p></div><Plus/></div><div className="formGrid calendarForm"><label>Date<input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)}/></label><label>Time<input type="time" value={newTime} onChange={e=>setNewTime(e.target.value)}/></label><label>Type<select value={newType} onChange={e=>setNewType(e.target.value as SessionType)}>{sessionTypes.map(t=><option key={t}>{t}</option>)}</select></label><label>Saved Workout<select value={newPlanId} onChange={e=>setNewPlanId(e.target.value)}><option value="none">No saved workout</option>{plans.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label className="fullSpan">Title<input value={newTitle} onChange={e=>setNewTitle(e.target.value)}/></label></div><div className="formActions"><button type="button" className="primary wide" onClick={add} disabled={adding}><Plus size={16}/>{adding?'Adding…':'Add to calendar'}</button></div>{addStatus&&<div className="status">{addStatus}</div>}</section>
   </div>
 }
 const sessionTypes: SessionType[] = ['Home','Gym','FMA','MMA','BJJ','Boxing','Kickboxing','Cardio','Mobility','Physio','Recovery','Strength'];
@@ -1349,6 +1340,9 @@ function ExerciseSessionCompletion({session,setSession,exercises,plans,logs,setL
   const picks = useMemo(()=>getSessionExercises(session, exercises, plans), [session.id, session.workout_plan_id, exercises.length, plans.length]);
   const [date,setDate]=useState(session.date || todayISO());
   const [savedExercises,setSavedExercises]=useState<Set<string>>(new Set());
+  const [actionStatus,setActionStatus]=useState('');
+  const [savingExercise,setSavingExercise]=useState('');
+  const [finishingSession,setFinishingSession]=useState(false);
   function plannedRows(exerciseId:string){
     const planned = plan?.exercises.find(e=>e.exercise_id===exerciseId);
     const count = Math.max(1, Number(planned?.planned_sets || 3));
@@ -1358,35 +1352,47 @@ function ExerciseSessionCompletion({session,setSession,exercises,plans,logs,setL
   useEffect(()=>{ setSetRows(Object.fromEntries(picks.map(e=>[e.exercise_id,plannedRows(e.exercise_id)]))); setSavedExercises(new Set()); }, [picks.map(p=>p.exercise_id).join('|'), plan?.id]);
   function updateSet(exId:string, idx:number, field:keyof ExerciseLogSet, value:any){ setSetRows(prev=>({...prev,[exId]:(prev[exId]||[]).map((s,i)=>i===idx?{...s,[field]:value}:s)})); }
   async function completeExercise(e:Exercise, quick=false){
+    if (savingExercise) return;
     const sets = quick ? [] : (setRows[e.exercise_id] || []);
     const entry: WorkoutLog = { id:crypto.randomUUID(), session_id:session.id, date, session_type:session.type, exercise_id:e.exercise_id, exercise_name:titleCase(e.name), sets, completed:true, reps: sets.map(s=>s.reps).filter(Boolean).join(', '), weight: sets.map(s=>s.weight).filter(Boolean).join(', ') };
-    const saved = await saveRemoteWorkoutLog(entry, profile, session);
-    setLogs([saved,...logs]);
+    // Optimistically collapse the exercise and record the local log immediately.
+    setSavingExercise(e.exercise_id);
     setSavedExercises(prev => new Set([...Array.from(prev), e.exercise_id]));
+    setLogs([entry,...logs]);
+    setActionStatus(`${titleCase(e.name)} saved.`);
+    try {
+      const saved = await saveRemoteWorkoutLog(entry, profile, session);
+      setLogs([saved,...logs.filter(log=>log.id!==entry.id)]);
+      setActionStatus((saved as any).remote_id ? `${titleCase(e.name)} saved and synced.` : `${titleCase(e.name)} saved on this device. Cloud save could not be confirmed.`);
+    } finally { setSavingExercise(''); }
   }
-  async function completeSession(){
+  function completeSession(){
+    if (finishingSession) return;
+    setFinishingSession(true);
     const updatedEvents = events.map(e=>e.id===session.id?{...e,date,status:'completed' as const}:e);
     setEvents(updatedEvents);
-    await updateRemoteSessionStatus(session, 'completed', date, session.time);
+    setActionStatus('Session completed. Returning to dashboard…');
+    // Do not block the UI transition on the network request.
+    void updateRemoteSessionStatus(session, 'completed', date, session.time);
     setSession(null);
     onSessionFinished();
   }
   return <section className="panel workoutCompletionPanel"><div className="sessionHeader"><div><span className={classNameForType(session.type)}>{session.type}</span><h3>{session.time ? `${session.time} · ` : ''}{session.title}</h3><p className="muted">{plan ? `Assigned programme: ${plan.name}. ` : ''}Follow the programme for the selected date. Record sets, reps and weight where useful, or mark each exercise complete without logging numbers.</p></div><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label></div><div className="workoutList">{picks.map(e=>{
     const saved = savedExercises.has(e.exercise_id);
-    return <div className={`workoutExercise ${saved ? 'exerciseCollapsed' : ''}`} key={e.exercise_id}>{saved ? <div className="row between savedExerciseSummary"><div><h3>{titleCase(e.name)}</h3><p><CheckCircle2 size={16}/>Exercise log saved</p></div><button onClick={()=>setSavedExercises(prev=>{ const next=new Set(prev); next.delete(e.exercise_id); return next; })}>Reopen</button></div> : <><div className="row between"><div><h3>{titleCase(e.name)}</h3><p>{titleCase(bodyOf(e))} · {titleCase(e.target)} · {titleCase(e.equipment)}</p></div><button onClick={()=>onPlay(e)} disabled={!safeVideo(e)}><Video size={16}/>Watch Demo</button></div><InstructionsBlock exercise={e}/><div className="setTable"><div className="setHead"><span>Set</span><span>Reps</span><span>Weight</span><span>Done</span></div>{(setRows[e.exercise_id] || []).map((s,idx)=><div className="setRow" key={s.set_number}><span>{s.set_number}</span><input value={s.reps||''} onChange={ev=>updateSet(e.exercise_id,idx,'reps',ev.target.value)} placeholder="8-12"/><input value={s.weight||''} onChange={ev=>updateSet(e.exercise_id,idx,'weight',ev.target.value)} placeholder="kg"/><input type="checkbox" checked={!!s.completed} onChange={ev=>updateSet(e.exercise_id,idx,'completed',ev.target.checked)}/></div>)}</div><div className="row actions"><button className="primary" onClick={()=>completeExercise(e)}><CheckCircle2 size={16}/>Save exercise log</button><button onClick={()=>completeExercise(e,true)}>Mark complete only</button></div></> }</div>
-  })}</div><button className="primary big" onClick={completeSession}><Trophy size={18}/>Mark session completed</button></section>
+    return <div className={`workoutExercise ${saved ? 'exerciseCollapsed' : ''}`} key={e.exercise_id}>{saved ? <div className="row between savedExerciseSummary"><div><h3>{titleCase(e.name)}</h3><p><CheckCircle2 size={16}/>Exercise log saved</p></div><button onClick={()=>setSavedExercises(prev=>{ const next=new Set(prev); next.delete(e.exercise_id); return next; })}>Reopen</button></div> : <><div className="row between"><div><h3>{titleCase(e.name)}</h3><p>{titleCase(bodyOf(e))} · {titleCase(e.target)} · {titleCase(e.equipment)}</p></div><button onClick={()=>onPlay(e)} disabled={!safeVideo(e)}><Video size={16}/>Watch Demo</button></div><InstructionsBlock exercise={e}/><div className="setTable"><div className="setHead"><span>Set</span><span>Reps</span><span>Weight</span><span>Done</span></div>{(setRows[e.exercise_id] || []).map((s,idx)=><div className="setRow" key={s.set_number}><span>{s.set_number}</span><input value={s.reps||''} onChange={ev=>updateSet(e.exercise_id,idx,'reps',ev.target.value)} placeholder="8-12"/><input value={s.weight||''} onChange={ev=>updateSet(e.exercise_id,idx,'weight',ev.target.value)} placeholder="kg"/><input type="checkbox" checked={!!s.completed} onChange={ev=>updateSet(e.exercise_id,idx,'completed',ev.target.checked)}/></div>)}</div><div className="row actions"><button type="button" className="primary" onClick={()=>completeExercise(e)} disabled={!!savingExercise}><CheckCircle2 size={16}/>{savingExercise===e.exercise_id?'Saving…':'Save exercise log'}</button><button type="button" onClick={()=>completeExercise(e,true)} disabled={!!savingExercise}>Mark complete only</button></div></> }</div>
+  })}</div>{actionStatus&&<div className="status actionFeedback">{actionStatus}</div>}<button type="button" className="primary big" onClick={completeSession} disabled={finishingSession}><Trophy size={18}/>{finishingSession?'Completing…':'Mark session completed'}</button></section>
 }
 
 function ClassSessionCompletion({session,setSession,events,setEvents}:{session:CalendarEvent; setSession:(s:CalendarEvent|null)=>void; events:CalendarEvent[]; setEvents:(e:CalendarEvent[])=>void}){
   const [date,setDate]=useState(session.date || todayISO());
   const [time,setTime]=useState(session.time || '19:00');
-  async function updateStatus(status:'completed'|'missed'){
+  function updateStatus(status:'completed'|'missed'){
     const updated = events.map(e=>e.id===session.id?{...e,date:dateOnly(date),time:normaliseTime(time),status}:e);
     setEvents(updated);
-    await updateRemoteSessionStatus(session, status, date, time);
     setSession({...session,date:dateOnly(date),time:normaliseTime(time),status});
+    void updateRemoteSessionStatus(session, status, date, time);
   }
-  return <section className="panel classCompletionPanel"><div className="classHero"><div><span className={classNameForType(session.type)}>{session.class_name ? 'FMA Class' : session.type}</span><h3>{session.class_name || session.title}</h3><p className="muted">This is a class session. It tracks attendance and calendar completion only. There are no individual exercise logs, sets, reps or weight entries for FMA classes.</p></div><div className={`classStatus ${session.status}`}><b>{titleCase(session.status)}</b><span>Attendance status</span></div></div><div className="grid two"><label>Class Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Class Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="classActions"><button className="primary big" onClick={()=>updateStatus('completed')}><CheckCircle2 size={18}/>Mark Class Attended</button><button className="big" onClick={()=>updateStatus('missed')}><X size={18}/>Mark Class Missed</button></div><div className="classNote"><b>Class focus</b><p>{fmaClasses.find(c=>c.name===session.class_name)?.focus || 'FMA academy session added to the training calendar.'}</p></div></section>
+  return <section className="panel classCompletionPanel"><div className="classHero"><div><span className={classNameForType(session.type)}>{session.class_name ? 'FMA Class' : session.type}</span><h3>{session.class_name || session.title}</h3><p className="muted">This is a class session. It tracks attendance and calendar completion only. There are no individual exercise logs, sets, reps or weight entries for FMA classes.</p></div><div className={`classStatus ${session.status}`}><b>{titleCase(session.status)}</b><span>Attendance status</span></div></div><div className="grid two"><label>Class Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Class Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="classActions"><button type="button" className="primary big" onClick={()=>updateStatus('completed')}><CheckCircle2 size={18}/>Mark Class Attended</button><button type="button" className="big" onClick={()=>updateStatus('missed')}><X size={18}/>Mark Class Missed</button></div><div className="classNote"><b>Class focus</b><p>{fmaClasses.find(c=>c.name===session.class_name)?.focus || 'FMA academy session added to the training calendar.'}</p></div></section>
 }
 function InstructionsBlock({exercise}:{exercise:Exercise}){ const [open,setOpen]=useState(false); const instructions=(exercise.instructions||[]).filter(s=>s && !/no written instructions stored yet/i.test(s)); return <div className="compactInstructions"><button onClick={()=>setOpen(!open)}>{open?<ChevronDown size={16}/>:<ChevronRight size={16}/>} Exercise Details & Instructions</button>{open && <div className="instructionsPanel">{exercise.description && <p>{sentence(exercise.description)}</p>}{instructions.length>0 && <ol>{instructions.map((s,i)=><li key={i}>{sentence(s)}</li>)}</ol>}<div className="chips">{[bodyOf(exercise),exercise.target,...(exercise.secondary_muscles||[])].filter(Boolean).map(x=><span key={x}>{titleCase(x)}</span>)}</div></div>}</div> }
 function pickExercisesForSession(session:CalendarEvent, exercises:Exercise[]){ const t=session.type; let terms:string[]=['plank','push-up','dead bug','squat','row']; if(t==='Home') terms=['ladder','shadow','plank','mountain climber','push-up']; if(t==='Gym'||t==='Strength') terms=['back squat','romanian deadlift','bench press','shoulder press','row']; if(t==='FMA'||t==='MMA'||t==='Boxing'||t==='Kickboxing') terms=['agility','boxing','jumping jack','mountain climber','plank']; if(t==='BJJ') terms=['bear crawl','bridge','superman','plank','hip']; if(t==='Mobility'||t==='Physio'||t==='Recovery') terms=['stretch','mobility','rotation','hamstring','shoulder']; const found=terms.map(term=>exercises.find(e=>e.name.toLowerCase().includes(term))).filter(Boolean) as Exercise[]; return found.length ? found.slice(0,6) : exercises.slice(0,5); }
@@ -1457,7 +1463,7 @@ function WorkoutBuilder({exercises,plans,setPlans,currentUser,athletes,users,eve
   const assignedPlanIds=new Set(events.filter(e=>isEventVisibleForUser(e,currentUser)).flatMap(e=>[e.workout_plan_id,e.remote_plan_id]).filter(Boolean) as string[]);
   const visibleSavedPlans=currentUser.role==='athlete'?plans.filter(p=>p.owner_athlete_id===currentUser.athlete_id||assignedPlanIds.has(p.id)||!!p.remote_id&&assignedPlanIds.has(p.remote_id)):plans;
   function createProfileCopy(plan:WorkoutPlan){const copy:WorkoutPlan={...plan,id:crypto.randomUUID(),remote_id:undefined,name:`${plan.name} - ${currentUser.name} copy`,owner_athlete_id:currentUser.athlete_id||selfProfile.id,created_by_user_id:currentUser.id,is_template:false,exercises:(plan.exercises||[]).map(e=>({...e}))};setPlans([copy,...plans]);setStorage('bbb_plans',[copy,...plans]);editPlan(copy);}
-  async function addToMyCalendar(plan:WorkoutPlan){const assigned=resolveAssignmentProfile(selfProfile,users,athletes);const event:CalendarEvent={id:crypto.randomUUID(),athlete_id:assigned.id,athlete_email:assigned.email||currentUser.email,athlete_name:assigned.name||currentUser.name,assigned_by_user_id:currentUser.id,workout_plan_id:plan.id,date:dateOnly(scheduleDate),time:normaliseTime(scheduleTime),title:plan.name,type:plan.session_type||'Gym',status:'planned'};const remoteSynced=await saveRemoteSession(event,plan,selfProfile);const next=[remoteSynced,...events.filter(e=>e.id!==remoteSynced.id)];setEvents(next);setStorage('bbb_events',next);setBuilderStatus(`${plan.name} added to ${assigned.name}'s calendar for ${dateOnly(scheduleDate)} at ${normaliseTime(scheduleTime)}.`);}
+  async function addToMyCalendar(plan:WorkoutPlan){const assigned=resolveAssignmentProfile(selfProfile,users,athletes);const event:CalendarEvent={id:crypto.randomUUID(),athlete_id:assigned.id,athlete_email:assigned.email||currentUser.email,athlete_name:assigned.name||currentUser.name,assigned_by_user_id:currentUser.id,workout_plan_id:plan.id,date:dateOnly(scheduleDate),time:normaliseTime(scheduleTime),title:plan.name,type:plan.session_type||'Gym',status:'planned'};const optimistic=[event,...events.filter(e=>e.id!==event.id)];setEvents(optimistic);setStorage('bbb_events',optimistic);setBuilderStatus(`${plan.name} added to ${assigned.name}'s calendar. Saving to cloud…`);const remoteSynced=await saveRemoteSession(event,plan,selfProfile);const next=[remoteSynced,...events.filter(e=>e.id!==event.id&&e.id!==remoteSynced.id&&e.remote_id!==remoteSynced.remote_id)];setEvents(next);setStorage('bbb_events',next);setBuilderStatus(remoteSynced.remote_id?`${plan.name} added to ${assigned.name}'s calendar for ${dateOnly(scheduleDate)} at ${normaliseTime(scheduleTime)} and synced.`:`${plan.name} added locally. Cloud save could not be confirmed — press Sync after checking your connection.`);}
   const totalSets=selected.reduce((n,e)=>n+Number(e.planned_sets||0),0);
   return <div className="workoutBuilderV4">
     <section className="panel builderMeta"><div className="builderStepTitle"><Target/><div><span>Workout details</span><h3>Build the session</h3></div></div><div className="grid three"><label>Workout Name<input value={name} onChange={e=>setName(e.target.value)}/></label><label>Training Focus<input value={focus} onChange={e=>setFocus(e.target.value)}/></label><label>Session Type<select value={sessionType} onChange={e=>setSessionType(e.target.value as SessionType)}>{sessionTypes.map(t=><option key={t}>{t}</option>)}</select></label></div></section>
@@ -1484,10 +1490,10 @@ function FmaClasses({events,setEvents,openSession,profile}:{events:CalendarEvent
   const [selectedName,setSelectedName]=useState(classOptions[0]?.name || 'Advanced MMA');
   const selected = classOptions.find(c=>c.name===selectedName) || classOptions[0] || fmaClasses[0];
   const [date,setDate]=useState(todayISO()); const [time,setTime]=useState('19:00');
-  const [newClassName,setNewClassName]=useState(''); const [newClassFocus,setNewClassFocus]=useState('');
+  const [newClassName,setNewClassName]=useState(''); const [newClassFocus,setNewClassFocus]=useState(''); const [status,setStatus]=useState('');
   useEffect(()=>{ setStorage('bbb_fma_classes', classOptions); }, [classOptions]);
   useEffect(()=>{ if(!supabase) return; supabase.from('fma_classes').select('*').eq('is_active', true).then(({data})=>{ if(data?.length){ const remote=data.map((c:any)=>({name:c.class_name, type:(c.class_type||'FMA') as SessionType, focus:c.focus||'Class session.'})); setClassOptions(remote); } }); }, []);
-  async function add(){ const event={id:crypto.randomUUID(),date:dateOnly(date),time:normaliseTime(time),title:`FMA ${selected.name}`,type:'FMA' as SessionType,status:'planned' as const,class_name:selected.name}; const synced = await saveRemoteSession(event, undefined, profile); setEvents([synced,...events]); }
+  async function add(){ const event={id:crypto.randomUUID(),date:dateOnly(date),time:normaliseTime(time),title:`FMA ${selected.name}`,type:'FMA' as SessionType,status:'planned' as const,class_name:selected.name}; setEvents([event,...events]); setStatus(`${selected.name} added. Saving to cloud…`); const synced = await saveRemoteSession(event, undefined, profile); setEvents([synced,...events.filter(e=>e.id!==event.id&&e.id!==synced.id&&e.remote_id!==synced.remote_id)]); setStatus(synced.remote_id?`${selected.name} added to the calendar and synced.`:`${selected.name} added locally. Cloud save could not be confirmed.`); }
   async function addClassType(){
     const name = newClassName.trim();
     const focus = newClassFocus.trim() || 'Class session.';
@@ -1496,7 +1502,7 @@ function FmaClasses({events,setEvents,openSession,profile}:{events:CalendarEvent
     const updated = [...classOptions.filter(c=>c.name.toLowerCase()!==name.toLowerCase()), newClass];
     setClassOptions(updated); if(supabase) await supabase.from('fma_classes').insert({class_name:name,class_type:'FMA',focus}); setSelectedName(name); setNewClassName(''); setNewClassFocus('');
   }
-  return <div className="fmaLayout"><section className="panel"><h3>FMA Chester Classes</h3><p className="muted">Select a class, choose a date and time, then add it to James’s calendar as a class session. Class sessions track attendance only — no sets, reps or exercise log required.</p><div className="classList">{classOptions.map(c=><button className={selected?.name===c.name?'selected':''} onClick={()=>setSelectedName(c.name)} key={c.name}><b>{c.name}</b><span>{c.focus}</span></button>)}</div><div className="panel inner newClassPanel"><h3>Add New Class Type</h3><p className="muted">Create additional class types for the FMA list. These are still class sessions and do not require sets, reps or exercise logs.</p><div className="formGrid two"><label>Class Name<input value={newClassName} onChange={e=>setNewClassName(e.target.value)} placeholder="e.g. Wrestling"/></label><label>Class Description<input value={newClassFocus} onChange={e=>setNewClassFocus(e.target.value)} placeholder="Short class focus"/></label></div><div className="formActions"><button onClick={addClassType} disabled={!newClassName.trim()}><Plus size={16}/>Add class type</button></div></div></section><section className="panel fmaSchedulePanel"><h3>Add {selected.name}</h3><p>{selected.focus}</p><div className="formGrid two"><label>Class Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Class Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary big" onClick={add}><CalendarDays size={18}/>Add class to calendar</button></div><h3>Upcoming FMA Sessions</h3>{events.filter(e=>e.type==='FMA').map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}</section></div>
+  return <div className="fmaLayout"><section className="panel"><h3>FMA Chester Classes</h3><p className="muted">Select a class, choose a date and time, then add it to James’s calendar as a class session. Class sessions track attendance only — no sets, reps or exercise log required.</p><div className="classList">{classOptions.map(c=><button className={selected?.name===c.name?'selected':''} onClick={()=>setSelectedName(c.name)} key={c.name}><b>{c.name}</b><span>{c.focus}</span></button>)}</div><div className="panel inner newClassPanel"><h3>Add New Class Type</h3><p className="muted">Create additional class types for the FMA list. These are still class sessions and do not require sets, reps or exercise logs.</p><div className="formGrid two"><label>Class Name<input value={newClassName} onChange={e=>setNewClassName(e.target.value)} placeholder="e.g. Wrestling"/></label><label>Class Description<input value={newClassFocus} onChange={e=>setNewClassFocus(e.target.value)} placeholder="Short class focus"/></label></div><div className="formActions"><button onClick={addClassType} disabled={!newClassName.trim()}><Plus size={16}/>Add class type</button></div></div></section><section className="panel fmaSchedulePanel"><h3>Add {selected.name}</h3><p>{selected.focus}</p><div className="formGrid two"><label>Class Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Class Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button type="button" className="primary big" onClick={add}><CalendarDays size={18}/>Add class to calendar</button></div>{status&&<div className="status">{status}</div>}<h3>Upcoming FMA Sessions</h3>{events.filter(e=>e.type==='FMA').map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}</section></div>
 }
 
 function Nutrition({profile,target,entries,setTargets,allTargets,setEntries,allEntries}:{profile:AthleteProfile;target:NutritionTarget;entries:NutritionEntry[];setTargets:(v:NutritionTarget[])=>void;allTargets:NutritionTarget[];setEntries:(v:NutritionEntry[])=>void;allEntries:NutritionEntry[]}){
@@ -1512,23 +1518,26 @@ function Nutrition({profile,target,entries,setTargets,allTargets,setEntries,allE
   const remaining={calories:Math.max(0,target.calories-totals.calories),protein:Math.max(0,target.protein_g-totals.protein_g),carbs:Math.max(0,target.carbs_g-totals.carbs_g),fats:Math.max(0,target.fats_g-totals.fats_g),water:Math.max(0,target.water_ml-totals.water_ml)};
   const grouped=MEAL_TYPES.map(type=>({type,entries:dayEntries.filter(e=>e.meal_type===type)})).filter(g=>g.entries.length);
   async function saveTargets(){
-    const saved=await saveRemoteNutritionTarget({...targetDraft,athlete_id:profile.remote_id||profile.id,effective_date:date},profile);
-    const next=[...allTargets.filter(t=>t.athlete_id!==profile.id&&t.athlete_id!==profile.remote_id),saved];setTargets(next);setStatus('Daily nutrition targets saved and synced.');
+    const optimistic={...targetDraft,athlete_id:profile.remote_id||profile.id,effective_date:date};
+    const localNext=[...allTargets.filter(t=>t.athlete_id!==profile.id&&t.athlete_id!==profile.remote_id),optimistic];setTargets(localNext);setStatus('Daily nutrition targets saved. Syncing to cloud…');
+    const saved=await saveRemoteNutritionTarget(optimistic,profile);
+    const next=[...allTargets.filter(t=>t.athlete_id!==profile.id&&t.athlete_id!==profile.remote_id),saved];setTargets(next);setStatus('Daily nutrition targets saved.');
   }
   async function addEntry(){
     if(!name.trim()&&mealType!=='Hydration'){setStatus('Add a food or meal name.');return;}
     const entry:NutritionEntry={id:crypto.randomUUID(),athlete_id:profile.remote_id||profile.id,entry_date:dateOnly(date),meal_type:mealType,name:name.trim()||'Water',serving:serving||undefined,calories:Number(calories||0),protein_g:Number(protein||0),carbs_g:Number(carbs||0),fats_g:Number(fats||0),water_ml:Number(water||0)};
-    const saved=await saveRemoteNutritionEntry(entry,profile);setEntries([saved,...allEntries]);setName('');setServing('');setCalories('');setProtein('');setCarbs('');setFats('');setWater('');setStatus(`${entry.name} added to ${mealType}.`);
+    setEntries([entry,...allEntries]);setName('');setServing('');setCalories('');setProtein('');setCarbs('');setFats('');setWater('');setStatus(`${entry.name} added. Saving to cloud…`);
+    const saved=await saveRemoteNutritionEntry(entry,profile);setEntries([saved,...allEntries.filter(item=>item.id!==entry.id)]);setStatus(saved.remote_id?`${entry.name} added and synced.`:`${entry.name} added on this device. Cloud save could not be confirmed.`);
   }
-  async function removeEntry(entry:NutritionEntry){await deleteRemoteNutritionEntry(entry);setEntries(allEntries.filter(e=>e.id!==entry.id&&e.remote_id!==entry.remote_id));}
+  function removeEntry(entry:NutritionEntry){setEntries(allEntries.filter(e=>e.id!==entry.id&&e.remote_id!==entry.remote_id));void deleteRemoteNutritionEntry(entry);}
   function quickWater(amount:number){setMealType('Hydration');setName('Water');setWater(String(amount));setCalories('0');setProtein('0');setCarbs('0');setFats('0');}
   return <div className="nutritionV4">
     <section className="nutritionHero"><div><span className="eyebrow">Nutrition</span><h2>Fuel Progress</h2><p>Better food. A stronger you.</p></div><div className="nutritionArt"><Apple/><span>Train<br/>Eat<br/>Recover<br/>Repeat</span></div></section>
     <section className="featureCard nutritionToday"><div className="row between"><h3>Today's Nutrition</h3><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div><div className="nutritionRings"><MetricRing value={totals.protein_g} target={target.protein_g} label="Protein" suffix="g" tone="green"/><MetricRing value={totals.calories} target={target.calories} label="Calories" suffix="" tone="orange"/><MetricRing value={totals.carbs_g} target={target.carbs_g} label="Carbs" suffix="g" tone="orange"/><MetricRing value={totals.fats_g} target={target.fats_g} label="Fats" suffix="g" tone="yellow"/><MetricRing value={Math.round(totals.water_ml/100)/10} target={Math.round(target.water_ml/100)/10} label="Water" suffix="L" tone="blue"/></div></section>
 
-    <section className="panel targetEditor"><div className="row between"><div><h3>Daily Targets</h3><p className="muted">Set targets that suit the athlete and current training phase.</p></div><Target/></div><div className="grid five"><label>Calories<input type="number" value={targetDraft.calories} onChange={e=>setTargetDraft({...targetDraft,calories:Number(e.target.value)})}/></label><label>Protein (g)<input type="number" value={targetDraft.protein_g} onChange={e=>setTargetDraft({...targetDraft,protein_g:Number(e.target.value)})}/></label><label>Carbs (g)<input type="number" value={targetDraft.carbs_g} onChange={e=>setTargetDraft({...targetDraft,carbs_g:Number(e.target.value)})}/></label><label>Fats (g)<input type="number" value={targetDraft.fats_g} onChange={e=>setTargetDraft({...targetDraft,fats_g:Number(e.target.value)})}/></label><label>Water (ml)<input type="number" value={targetDraft.water_ml} onChange={e=>setTargetDraft({...targetDraft,water_ml:Number(e.target.value)})}/></label></div><button className="primary" onClick={saveTargets}><Save/>Save targets</button></section>
+    <section className="panel targetEditor"><div className="row between"><div><h3>Daily Targets</h3><p className="muted">Set targets that suit the athlete and current training phase.</p></div><Target/></div><div className="grid five"><label>Calories<input type="number" value={targetDraft.calories} onChange={e=>setTargetDraft({...targetDraft,calories:Number(e.target.value)})}/></label><label>Protein (g)<input type="number" value={targetDraft.protein_g} onChange={e=>setTargetDraft({...targetDraft,protein_g:Number(e.target.value)})}/></label><label>Carbs (g)<input type="number" value={targetDraft.carbs_g} onChange={e=>setTargetDraft({...targetDraft,carbs_g:Number(e.target.value)})}/></label><label>Fats (g)<input type="number" value={targetDraft.fats_g} onChange={e=>setTargetDraft({...targetDraft,fats_g:Number(e.target.value)})}/></label><label>Water (ml)<input type="number" value={targetDraft.water_ml} onChange={e=>setTargetDraft({...targetDraft,water_ml:Number(e.target.value)})}/></label></div><button type="button" className="primary" onClick={saveTargets}><Save/>Save targets</button></section>
 
-    <section className="panel mealLogger"><div className="row between"><div><h3>Quick Add Meal</h3><p className="muted">Log food, macros or water throughout the day.</p></div><Utensils/></div><div className="mealTypeGrid">{MEAL_TYPES.map(type=><button className={mealType===type?'active':''} onClick={()=>setMealType(type)} key={type}>{type==='Breakfast'?<Sun/>:type==='Lunch'?<Coffee/>:type==='Dinner'?<Utensils/>:type==='Hydration'?<Droplets/>:<Apple/>}<b>{type}</b></button>)}</div><div className="grid three"><label className="fullSpan">Food / Meal Name<input value={name} onChange={e=>setName(e.target.value)} placeholder={mealType==='Hydration'?'Water':'e.g. Chicken rice bowl'}/></label><label>Serving<input value={serving} onChange={e=>setServing(e.target.value)} placeholder="e.g. 1 bowl"/></label><label>Calories<input type="number" value={calories} onChange={e=>setCalories(e.target.value)}/></label><label>Protein (g)<input type="number" value={protein} onChange={e=>setProtein(e.target.value)}/></label><label>Carbs (g)<input type="number" value={carbs} onChange={e=>setCarbs(e.target.value)}/></label><label>Fats (g)<input type="number" value={fats} onChange={e=>setFats(e.target.value)}/></label><label>Water (ml)<input type="number" value={water} onChange={e=>setWater(e.target.value)}/></label></div><div className="row actions"><button className="primary" onClick={addEntry}><Plus/>Add entry</button><button onClick={()=>quickWater(250)}><Droplets/>250 ml water</button><button onClick={()=>quickWater(500)}><Droplets/>500 ml water</button></div>{status&&<div className="status">{status}</div>}</section>
+    <section className="panel mealLogger"><div className="row between"><div><h3>Quick Add Meal</h3><p className="muted">Log food, macros or water throughout the day.</p></div><Utensils/></div><div className="mealTypeGrid">{MEAL_TYPES.map(type=><button className={mealType===type?'active':''} onClick={()=>setMealType(type)} key={type}>{type==='Breakfast'?<Sun/>:type==='Lunch'?<Coffee/>:type==='Dinner'?<Utensils/>:type==='Hydration'?<Droplets/>:<Apple/>}<b>{type}</b></button>)}</div><div className="grid three"><label className="fullSpan">Food / Meal Name<input value={name} onChange={e=>setName(e.target.value)} placeholder={mealType==='Hydration'?'Water':'e.g. Chicken rice bowl'}/></label><label>Serving<input value={serving} onChange={e=>setServing(e.target.value)} placeholder="e.g. 1 bowl"/></label><label>Calories<input type="number" value={calories} onChange={e=>setCalories(e.target.value)}/></label><label>Protein (g)<input type="number" value={protein} onChange={e=>setProtein(e.target.value)}/></label><label>Carbs (g)<input type="number" value={carbs} onChange={e=>setCarbs(e.target.value)}/></label><label>Fats (g)<input type="number" value={fats} onChange={e=>setFats(e.target.value)}/></label><label>Water (ml)<input type="number" value={water} onChange={e=>setWater(e.target.value)}/></label></div><div className="row actions"><button type="button" className="primary" onClick={addEntry}><Plus/>Add entry</button><button type="button" onClick={()=>quickWater(250)}><Droplets/>250 ml water</button><button type="button" onClick={()=>quickWater(500)}><Droplets/>500 ml water</button></div>{status&&<div className="status">{status}</div>}</section>
 
     <div className="nutritionContentGrid"><section className="panel mealHistory"><h3>Meals & Entries</h3>{grouped.length===0?<div className="emptyDraft"><Utensils/><h4>No nutrition entries</h4><p>Add the first meal or water entry for this day.</p></div>:grouped.map(group=><div className="mealGroup" key={group.type}><div className="row between"><h4>{group.type}</h4><b>{group.entries.reduce((n,e)=>n+e.calories,0)} kcal</b></div>{group.entries.map(entry=><div className="nutritionEntryRow" key={entry.id}><div><b>{entry.name}</b><span>{entry.serving||'Entry'} · {entry.calories} kcal</span></div><div className="macroMini"><span>{entry.protein_g}g P</span><span>{entry.carbs_g}g C</span><span>{entry.fats_g}g F</span>{entry.water_ml>0&&<span>{entry.water_ml}ml</span>}</div><button className="dangerIcon" onClick={()=>removeEntry(entry)}><Trash2/></button></div>)}</div>)}</section>
       <section className="featureCard remainingCard"><div className="cardLabel"><Target/><span>Remaining Today</span></div><div className="remainingGrid"><div><b>{remaining.protein}g</b><span>Protein</span></div><div><b>{remaining.calories}</b><span>Calories</span></div><div><b>{remaining.carbs}g</b><span>Carbs</span></div><div><b>{remaining.fats}g</b><span>Fats</span></div><div><b>{(remaining.water/1000).toFixed(1)}L</b><span>Water</span></div></div></section>
@@ -1750,12 +1759,13 @@ function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:Workou
       type: plan.session_type || 'Gym',
       status: 'planned',
     };
-    setStatus('Pushing workout to selected profile...');
+    setStatus('Workout added. Saving assignment to cloud...');
+    const optimisticEvents = [event, ...events.filter(e => e.id !== event.id)];
+    setEvents(optimisticEvents); setStorage('bbb_events', optimisticEvents);
     const remoteSynced = await saveRemoteSession(event, plan, assignedProfile);
-    const nextEvents = [remoteSynced, ...events.filter(e => e.id !== remoteSynced.id && e.remote_id !== remoteSynced.remote_id)];
-    setEvents(nextEvents);
-    setStorage('bbb_events', nextEvents);
-    setStatus(`${plan.name} has been pushed to ${assigned.name}. It will appear in ${assigned.name}'s Training Calendar on ${dateOnly(date)} at ${normaliseTime(time)}.`);
+    const nextEvents = [remoteSynced, ...events.filter(e => e.id !== event.id && e.id !== remoteSynced.id && e.remote_id !== remoteSynced.remote_id)];
+    setEvents(nextEvents); setStorage('bbb_events', nextEvents);
+    setStatus(remoteSynced.remote_id ? `${plan.name} has been pushed to ${assigned.name}. It will appear after ${assigned.name} opens/refreshes the app or presses Sync.` : `${plan.name} was added locally, but cloud save could not be confirmed. Check the connection and press Sync before relying on another device.`);
   }
   return <section className="panel"><h3>Assign Workout To Athlete</h3><p className="muted">Create workouts in the Workout Builder, then push the saved workout to a selected athlete. The session is attached to the athlete profile selected below, not automatically to the trainer profile.</p>{plans.length===0 ? <p className="status">No saved workouts yet. Create and save a workout in the Workout Builder first.</p> : <><div className="grid two"><label>Saved Workout<select value={planId} onChange={e=>setPlanId(e.target.value)}>{plans.map(p=><option key={p.id} value={p.id}>{p.name} · {p.exercises.length} exercises</option>)}</select></label><label>Assign To Profile<select value={athleteId} onChange={e=>setAthleteId(e.target.value)}>{athleteOptions.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label><label>Session Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Session Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary" onClick={assign}><CalendarDays size={16}/>Push workout to profile</button></div></>}{status && <div className="status">{status}</div>}<div className="assignmentList"><h4>Recently Assigned To Profiles</h4>{events.filter(e=>e.workout_plan_id && e.athlete_id).slice(0,5).map(e=><div className="preview" key={e.id}><b>{e.title}</b><span>{dateOnly(e.date)} · {normaliseTime(e.time) || 'Time TBC'}</span><em>{e.athlete_name || athletes.find(a=>a.id===e.athlete_id)?.name || 'Athlete not assigned'}</em></div>)}</div></section>
 }

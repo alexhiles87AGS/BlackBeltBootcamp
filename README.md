@@ -99,3 +99,25 @@ Instructions are in `V4_DEPLOYMENT_GUIDE.md`.
 - Supabase is the source of truth; local storage is retained only as a fast cache/resilience layer.
 - Existing exercises and videos are not re-imported or reset by this update.
 - V4 does not deliberately wipe programmes, sessions, logs, profiles or achievement data.
+
+## V4.0.1 iPhone optimisation patch
+
+This package includes the focused V4.0.1 mobile visual patch requested after real-device testing:
+
+- Training Calendar now fits a narrow iPhone viewport without pushing the seven-day strip outside the frame.
+- Calendar session cards, selected-day heading and Add Session form are constrained to the available width.
+- Workout Builder exercise picker, draft fields, action controls and saved-workout scheduler now use mobile-safe layouts and natural page scrolling.
+- The top hamburger control, brand and compact profile/sync controls are aligned for iPhone safe areas.
+- The drawer profile text truncates cleanly instead of overflowing its container.
+- The drawer navigation is independently scrollable, so Admin Console and Exercise Import remain reachable on short screens.
+- The top hamburger and bottom More button now open the same consistent, viewport-safe drawer.
+
+No Supabase migration is required for V4.0.1. This is a visual and navigation patch only.
+
+## V4.0.2 interaction and sync patch
+
+V4.0.2 keeps the V4.0.1 iPhone layout patch and changes the interaction model so important actions respond immediately rather than waiting for a Supabase round trip.
+
+Cloud reads are now controlled: the app refreshes once on authenticated open/refresh and when the user presses the Sync control. Saves still write to Supabase, so a second device can retrieve the new data by reopening/refreshing or pressing Sync.
+
+See `CHANGELOG_V4_0_2.md` and `INTERACTION_QA_CHECKLIST.md` before deployment.

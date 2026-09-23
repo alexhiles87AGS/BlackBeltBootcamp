@@ -103,6 +103,7 @@ export type ExerciseLogSet = {
 
 export type WorkoutLog = {
   id: string;
+  remote_id?: string;
   session_id?: string;
   date: string;
   session_type?: SessionType;
