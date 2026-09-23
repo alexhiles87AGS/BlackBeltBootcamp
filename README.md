@@ -121,3 +121,8 @@ V4.0.2 keeps the V4.0.1 iPhone layout patch and changes the interaction model so
 Cloud reads are now controlled: the app refreshes once on authenticated open/refresh and when the user presses the Sync control. Saves still write to Supabase, so a second device can retrieve the new data by reopening/refreshing or pressing Sync.
 
 See `CHANGELOG_V4_0_2.md` and `INTERACTION_QA_CHECKLIST.md` before deployment.
+
+
+## V4.0.4 focused UI cleanup
+
+V4.0.4 retains all V4.0.2 functionality and makes only three visual/UX changes requested after iPhone testing: the drawer athlete identity is constrained inside its card, the duplicate large calendar session preview is removed, and Workout Builder uses dropdown body-area selection instead of the horizontal body-part pill scroller. No Supabase SQL is required.

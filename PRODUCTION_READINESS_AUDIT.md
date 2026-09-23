@@ -1,4 +1,4 @@
-# Production Readiness Audit — V4.0.2
+# Production Readiness Audit — V4.0.3
 
 ## Scope
 Focused interaction reliability and sync-behaviour patch built on V4.0.1.
@@ -17,3 +17,7 @@ A full Vite production build could not be completed in the sandbox because packa
 
 ## Supabase
 No schema migration is introduced by this patch. Existing V4/V3 Auth and RLS setup remains required.
+
+
+## V4.0.3 scope note
+This patch changes only drawer identity layout, removal of the duplicate calendar preview card, and Workout Builder body-area selector simplification. It makes no schema, authentication, cloud-sync or data-model changes.

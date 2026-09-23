@@ -145,3 +145,64 @@ html,body,#root{width:100%;max-width:100%;overflow-x:hidden}.v4Shell,.v4PageFram
 button{touch-action:manipulation;-webkit-tap-highlight-color:rgba(56,237,160,.12)}
 .actionFeedback{margin:12px 0}
 button:active{transform:translateY(0) scale(.99)}
+
+/* V4.0.3 focused UI cleanup */
+/* Keep the athlete identity fully inside the drawer profile card. */
+.v4Drawer .drawerUserButton{
+  display:grid!important;
+  grid-template-columns:48px minmax(0,1fr) 18px;
+  align-items:center;
+  column-gap:10px;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  overflow:hidden;
+}
+.v4Drawer .drawerUserButton .avatar.large{
+  width:44px;
+  height:44px;
+  min-width:44px;
+  max-width:44px;
+  margin:0;
+  overflow:hidden;
+  justify-self:start;
+  flex:none;
+}
+.v4Drawer .drawerUserButton .drawerIdentity{min-width:0;width:100%;overflow:hidden}
+.v4Drawer .drawerUserButton>svg{width:18px;height:18px;justify-self:end;flex:none}
+
+/* Workout Builder now uses dropdowns only for body-area / muscle selection. */
+.builderFiltersClean{grid-template-columns:minmax(150px,.8fr) minmax(170px,1fr) minmax(240px,1.6fr);align-items:end}
+.builderFiltersClean label{min-width:0}
+.builderFiltersClean select,.builderFiltersClean input{min-width:0;width:100%}
+.builderFiltersClean .builderSearch{min-width:0}
+
+@media(max-width:960px){
+  .builderFiltersClean{grid-template-columns:1fr!important}
+}
+@media(max-width:580px){
+  .v4Drawer .drawerUserButton{grid-template-columns:44px minmax(0,1fr) 16px!important;padding:10px!important;column-gap:8px!important}
+  .v4Drawer .drawerUserButton .avatar.large{width:40px!important;height:40px!important;min-width:40px!important;max-width:40px!important}
+  .v4Drawer .drawerUserButton .drawerIdentity b{font-size:.88rem}
+  .v4Drawer .drawerUserButton .drawerIdentity span{font-size:.68rem}
+  .v4Drawer .drawerUserButton .drawerIdentity em{font-size:.64rem}
+}
+
+
+/* V4.0.4 focused menu/home cleanup */
+/* .drawerUser span has higher specificity than .avatar, so explicitly restore the avatar centring layout. */
+.v4Drawer .drawerUserButton .avatar.large{
+  display:grid!important;
+  place-items:center!important;
+  text-align:center!important;
+  line-height:1!important;
+  padding:0!important;
+  overflow:hidden;
+}
+.v4Drawer .drawerUserButton .avatar.large img{display:block;width:100%;height:100%;object-fit:cover}
+/* Home hero no longer shows the Train / Progress / Belong copy. */
+.dashboardV4 .heroAthleteArt{justify-content:center;min-width:88px}
+.dashboardV4 .heroAthleteArt svg{margin:0}
+@media(max-width:580px){
+  .v4Drawer .drawerUserButton .avatar.large{display:grid!important;place-items:center!important}
+}
