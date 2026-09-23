@@ -1,36 +1,38 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  Activity, BarChart3, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Clock,
-  Database, Dumbbell, Home, Import, Library, LogOut, Medal, Menu, PlayCircle, Plus,
-  Save, Search, Shield, Target, Trophy, User, Users, Video, X, ClipboardList,
-  ArrowLeft, ArrowRight, Edit3, Trash2, RefreshCw, KeyRound
+  Activity, Apple, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Award, BarChart3, CalendarDays,
+  CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock, Cloud, Coffee, Database,
+  Droplets, Dumbbell, Eye, Flame, GripVertical, Home, Import, Library, ListChecks, LogOut,
+  Medal, Menu, MoreHorizontal, PlayCircle, Plus, RefreshCw, Save, Search, Shield, Sun,
+  Target, Trash2, Trophy, User, Users, Utensils, Video, Weight, X, ClipboardList, Edit3, KeyRound
 } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { supabase, buildVideoUrl } from './supabaseClient';
 import catalogue from './data/exercise_catalogue.json';
 import summary from './data/video_sort_summary.json';
-import type { AppUser, AthleteProfile, AthleteMetric, Badge, BadgeDefinition, AchievementType, CalendarEvent, Exercise, ExerciseLogSet, ProgrammeExercise, SessionType, WorkoutLog, WorkoutPlan } from './types';
+import type { AppUser, AthleteProfile, AthleteMetric, Badge, BadgeDefinition, AchievementType, CalendarEvent, Exercise, ExerciseLogSet, MealType, NutritionEntry, NutritionTarget, ProgrammeExercise, SessionType, WorkoutLog, WorkoutPlan } from './types';
 import './styles.css';
 
 const localCatalogue = catalogue as Exercise[];
 
-type Page = 'dashboard' | 'calendar' | 'today' | 'library' | 'builder' | 'fma' | 'stats' | 'badges' | 'profile' | 'admin' | 'import' | 'session';
+type Page = 'dashboard' | 'calendar' | 'today' | 'library' | 'builder' | 'fma' | 'nutrition' | 'stats' | 'badges' | 'profile' | 'admin' | 'import' | 'session';
 
-const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[] }[] = [
-  { page: 'dashboard', label: 'Dashboard', icon: <Home size={18}/> },
-  { page: 'calendar', label: 'Training Calendar', icon: <CalendarDays size={18}/> },
-  { page: 'today', label: "Today's Training", icon: <Activity size={18}/> },
-  { page: 'library', label: 'Exercise Library', icon: <Library size={18}/> },
-  { page: 'builder', label: 'Workout Builder', icon: <Plus size={18}/> },
-  { page: 'fma', label: 'FMA Classes', icon: <Shield size={18}/> },
-  { page: 'stats', label: 'Progress Stats', icon: <BarChart3 size={18}/> },
-  { page: 'badges', label: 'Badges', icon: <Medal size={18}/> },
-  { page: 'admin', label: 'Admin Console', icon: <Users size={18}/>, roles: ['admin','coach'] },
-  { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'] },
+const NAV: { page: Page; label: string; icon: React.ReactNode; roles?: string[]; group?: string }[] = [
+  { page: 'dashboard', label: 'Home', icon: <Home size={18}/>, group: 'Athlete' },
+  { page: 'calendar', label: 'Training Calendar', icon: <CalendarDays size={18}/>, group: 'Training' },
+  { page: 'today', label: "Today's Training", icon: <Activity size={18}/>, group: 'Training' },
+  { page: 'builder', label: 'Workout Builder', icon: <Dumbbell size={18}/>, group: 'Training' },
+  { page: 'library', label: 'Exercise Library', icon: <Library size={18}/>, group: 'Training' },
+  { page: 'fma', label: 'FMA Classes', icon: <Shield size={18}/>, group: 'Training' },
+  { page: 'nutrition', label: 'Nutrition', icon: <Utensils size={18}/>, group: 'Progress' },
+  { page: 'stats', label: 'Progress', icon: <BarChart3 size={18}/>, group: 'Progress' },
+  { page: 'badges', label: 'Achievements', icon: <Medal size={18}/>, group: 'Progress' },
+  { page: 'admin', label: 'Admin Console', icon: <Users size={18}/>, roles: ['admin','coach'], group: 'Admin' },
+  { page: 'import', label: 'Exercise Import', icon: <Database size={18}/>, roles: ['admin','coach'], group: 'Admin' },
 ];
 
-const APP_VERSION = '3.0.0-cloud-sync-auth';
+const APP_VERSION = '4.0.0-major-ui-nutrition-progress';
 
 const cleanProfiles: AthleteProfile[] = [
   {
@@ -93,6 +95,18 @@ const initialBadges: BadgeDefinition[] = [
   { id:'b5', name:'Strength Builder', icon:'💪', description:'Log 50 strength or gym exercises.', badge_type:'strength_exercises', target_value:50, xp_value:100, is_active:true },
   { id:'b6', name:'Fight Camp Ready', icon:'🏆', description:'Complete 20 planned training sessions.', badge_type:'completed_workouts', target_value:20, xp_value:150, is_active:true },
 ];
+
+const defaultNutritionTarget: NutritionTarget = {
+  id: 'default-nutrition-target',
+  athlete_id: 'james-athlete',
+  calories: 2400,
+  protein_g: 180,
+  carbs_g: 250,
+  fats_g: 70,
+  water_ml: 3000,
+};
+
+const MEAL_TYPES: MealType[] = ['Breakfast','Lunch','Dinner','Snack','Hydration'];
 
 const fmaClasses = [
   { name:'Advanced MMA', type:'MMA' as SessionType, focus:'High-level MMA skill development and live rounds.' },
@@ -220,6 +234,35 @@ function calcStreak(logs:WorkoutLog[], events:CalendarEvent[]){
   return streak;
 }
 
+function parseNumeric(value?: string | number | null){
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const match = String(value || '').replace(',', '.').match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : 0;
+}
+function estimateOneRepMax(weight: number, reps: number){
+  if (!weight || !reps) return 0;
+  if (reps <= 1) return weight;
+  return Math.round((weight * (1 + reps / 30)) * 10) / 10;
+}
+function nutritionTotals(entries: NutritionEntry[]){
+  return entries.reduce((acc, entry)=>({
+    calories: acc.calories + Number(entry.calories || 0),
+    protein_g: acc.protein_g + Number(entry.protein_g || 0),
+    carbs_g: acc.carbs_g + Number(entry.carbs_g || 0),
+    fats_g: acc.fats_g + Number(entry.fats_g || 0),
+    water_ml: acc.water_ml + Number(entry.water_ml || 0),
+  }), { calories:0, protein_g:0, carbs_g:0, fats_g:0, water_ml:0 });
+}
+function clampPercent(value:number, target:number){ return Math.max(0, Math.min(100, Math.round((value / Math.max(1,target))*100))); }
+function displaySyncTime(value?: Date | null){
+  if (!value) return 'Not synced yet';
+  const diff = Date.now() - value.getTime();
+  if (diff < 60000) return 'Synced just now';
+  if (diff < 3600000) return `Synced ${Math.max(1,Math.round(diff/60000))}m ago`;
+  return `Synced ${value.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`;
+}
+function getInitials(name?: string){ return (name || 'Athlete').split(/\s+/).filter(Boolean).slice(0,2).map(v=>v[0]?.toUpperCase()).join(''); }
+
 function getInitialEvents(): CalendarEvent[] {
   const [mon,tue,wed,thu,fri,sat,sun] = weekDates().map(iso);
   return [
@@ -306,7 +349,7 @@ function profileForUser(user: AppUser | null, athletes: AthleteProfile[]){
 
 function mergeUniqueById<T extends {id:string}>(local:T[], remote:T[]){
   const map = new Map<string,T>();
-  [...remote, ...local].forEach(item => map.set(item.id, item));
+  [...local, ...remote].forEach(item => map.set(item.id, item));
   return Array.from(map.values());
 }
 
@@ -535,7 +578,7 @@ async function saveRemoteSession(event: CalendarEvent, plan: WorkoutPlan | undef
     const { data, error } = await supabase.from('training_sessions').insert({
       athlete_id: remoteAthleteId,
       programme_id: remoteProgrammeId,
-      session_date: toGmtSessionDate(event.date),
+      session_date: dateOnly(event.date),
       start_time: normaliseTime(event.time) || null,
       title: event.title,
       session_type: event.type,
@@ -559,7 +602,7 @@ async function updateRemoteSessionStatus(event: CalendarEvent, status: CalendarE
       .from('training_sessions')
       .update({
         status,
-        session_date: toGmtSessionDate(date || event.date),
+        session_date: dateOnly(date || event.date),
         start_time: normaliseTime(time || event.time) || null,
       })
       .eq('id', event.remote_id);
@@ -673,6 +716,73 @@ async function saveRemoteMetric(metric: AthleteMetric) {
   } catch (err) { console.warn('Supabase metric save skipped:', err); return metric; }
 }
 
+
+async function saveRemoteNutritionTarget(target: NutritionTarget, profile: AthleteProfile): Promise<NutritionTarget> {
+  if (!supabase) return target;
+  try {
+    const athleteId = await ensureRemoteAthlete(profile);
+    if (!athleteId) return target;
+    const row = {
+      athlete_id: athleteId,
+      calories: Math.max(0, Number(target.calories || 0)),
+      protein_g: Math.max(0, Number(target.protein_g || 0)),
+      carbs_g: Math.max(0, Number(target.carbs_g || 0)),
+      fats_g: Math.max(0, Number(target.fats_g || 0)),
+      water_ml: Math.max(0, Number(target.water_ml || 0)),
+      effective_date: dateOnly(target.effective_date || todayISO()),
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error } = await supabase.from('nutrition_targets').upsert(row, { onConflict:'athlete_id' }).select('*').single();
+    if (error) throw error;
+    return {
+      ...target,
+      id: data?.id || target.id,
+      remote_id: data?.id || target.remote_id,
+      athlete_id: athleteId,
+      calories:Number(data?.calories ?? target.calories),
+      protein_g:Number(data?.protein_g ?? target.protein_g),
+      carbs_g:Number(data?.carbs_g ?? target.carbs_g),
+      fats_g:Number(data?.fats_g ?? target.fats_g),
+      water_ml:Number(data?.water_ml ?? target.water_ml),
+    };
+  } catch (err) { console.warn('Supabase nutrition target save skipped:', err); return target; }
+}
+
+async function saveRemoteNutritionEntry(entry: NutritionEntry, profile: AthleteProfile): Promise<NutritionEntry> {
+  if (!supabase) return entry;
+  try {
+    const athleteId = await ensureRemoteAthlete(profile);
+    if (!athleteId) return entry;
+    const row = {
+      athlete_id: athleteId,
+      entry_date: dateOnly(entry.entry_date),
+      meal_type: entry.meal_type,
+      name: entry.name,
+      serving: entry.serving || null,
+      calories: Math.max(0, Number(entry.calories || 0)),
+      protein_g: Math.max(0, Number(entry.protein_g || 0)),
+      carbs_g: Math.max(0, Number(entry.carbs_g || 0)),
+      fats_g: Math.max(0, Number(entry.fats_g || 0)),
+      water_ml: Math.max(0, Number(entry.water_ml || 0)),
+      notes: entry.notes || null,
+    };
+    const { data, error } = await supabase.from('nutrition_entries').insert(row).select('*').single();
+    if (error) throw error;
+    return { ...entry, id:data?.id || entry.id, remote_id:data?.id || entry.remote_id, athlete_id:athleteId, created_at:data?.created_at || entry.created_at };
+  } catch (err) { console.warn('Supabase nutrition entry save skipped:', err); return entry; }
+}
+
+async function deleteRemoteNutritionEntry(entry: NutritionEntry): Promise<boolean> {
+  if (!supabase) return true;
+  const id = entry.remote_id || entry.id;
+  if (!isUuid(id)) return true;
+  try {
+    const { error } = await supabase.from('nutrition_entries').delete().eq('id', id);
+    if (error) throw error;
+    return true;
+  } catch (err) { console.warn('Supabase nutrition delete skipped:', err); return false; }
+}
+
 async function saveRemoteWorkoutLog(log: WorkoutLog, athlete: AthleteProfile | undefined, event?: CalendarEvent) {
   if (!supabase) return log;
   try {
@@ -766,6 +876,8 @@ function migrateFinalState(){
     if (!localStorage.getItem('bbb_plans')) localStorage.setItem('bbb_plans', JSON.stringify([]));
     if (!localStorage.getItem('bbb_logs')) localStorage.setItem('bbb_logs', JSON.stringify([]));
     if (!localStorage.getItem('bbb_badges')) localStorage.setItem('bbb_badges', JSON.stringify(initialBadges));
+    if (!localStorage.getItem('bbb_nutrition_targets')) localStorage.setItem('bbb_nutrition_targets', JSON.stringify([defaultNutritionTarget]));
+    if (!localStorage.getItem('bbb_nutrition_entries')) localStorage.setItem('bbb_nutrition_entries', JSON.stringify([]));
 
     const users = canonicaliseUsers(JSON.parse(localStorage.getItem('bbb_users') || '[]'));
     const athletes = canonicaliseAthletes(JSON.parse(localStorage.getItem('bbb_athletes') || '[]'));
@@ -810,7 +922,13 @@ function App() {
   const [video, setVideo] = useState<{url: string; title: string} | null>(null);
   const [activeSession, setActiveSession] = useState<CalendarEvent | null>(null);
   const [metrics, setMetrics] = useState<AthleteMetric[]>(() => storage('bbb_metrics', []));
+  const [nutritionTargets, setNutritionTargets] = useState<NutritionTarget[]>(() => storage('bbb_nutrition_targets', [defaultNutritionTarget]));
+  const [nutritionEntries, setNutritionEntries] = useState<NutritionEntry[]>(() => storage('bbb_nutrition_entries', []));
   const [dashboardFocusText, setDashboardFocusText] = useState(() => storage('bbb_dashboard_focus', 'Keep stacking the small wins.'));
+  const [syncing, setSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const syncInFlight = useRef(false);
+  const syncTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -835,154 +953,165 @@ function App() {
   useEffect(() => { setStorage('bbb_plans', plans); }, [plans]);
   useEffect(() => { setStorage('bbb_badges', badgeDefinitions); }, [badgeDefinitions]);
   useEffect(() => { setStorage('bbb_metrics', metrics); }, [metrics]);
+  useEffect(() => { setStorage('bbb_nutrition_targets', nutritionTargets); }, [nutritionTargets]);
+  useEffect(() => { setStorage('bbb_nutrition_entries', nutritionEntries); }, [nutritionEntries]);
   useEffect(() => { setStorage('bbb_dashboard_focus', dashboardFocusText); }, [dashboardFocusText]);
 
   useEffect(() => {
-    if (currentUser && currentUser.athlete_id) {
-      const athlete = athletes.find(a => a.id === currentUser.athlete_id);
-      if (athlete) setProfile(athlete);
-    }
-  }, [currentUser?.id, currentUser?.athlete_id, athletes.length]);
-
+    if (!currentUser) return;
+    const athlete = athletes.find(a => a.id === currentUser.athlete_id)
+      || athletes.find(a => normalise(a.email) === normalise(currentUser.email));
+    if (athlete) setProfile(athlete);
+  }, [currentUser?.id, currentUser?.athlete_id, currentUser?.email, athletes]);
 
   useEffect(() => {
     const repaired = repairAssignedEvents(events, athletes, users);
     if (repaired !== events) setEvents(repaired);
-  }, [athletes.length, users.length]);
+  }, [athletes, users]);
 
-  useEffect(() => { if (currentUser) loadFromSupabase(); }, [currentUser?.id]);
-
-  async function loadFromSupabase() {
-    if (!supabase) return;
-    const { data } = await supabase.from('exercises').select('*').eq('is_archived', false).order('name');
-    if (data?.length) setExercises(data as Exercise[]);
-
+  const loadFromSupabase = useCallback(async (_reason = 'manual') => {
+    if (!supabase || !currentUser || syncInFlight.current) return;
+    syncInFlight.current = true;
+    setSyncing(true);
     try {
+      const { data: exerciseRows, error: exerciseError } = await supabase.from('exercises').select('*').eq('is_archived', false).order('name');
+      if (!exerciseError && exerciseRows?.length) setExercises(exerciseRows as Exercise[]);
+
       const { data: remoteBadges, error: remoteBadgeError } = await supabase.from('badges').select('*').order('created_at', { ascending:true });
-      if (!remoteBadgeError) {
-        const mappedBadges = (remoteBadges || []).map(mapRemoteBadgeToLocal).filter(b => !isBadgeTombstoned(b));
-        // Supabase is the source of truth for achievements once V3 is enabled.
-        // This prevents deleted or deactivated achievements from reappearing from local seed data.
-        setBadgeDefinitions(mergeBadgeDefinitions([], mappedBadges));
-      } else {
-        console.warn('Supabase badge load skipped:', remoteBadgeError);
-      }
-    } catch (err) {
-      console.warn('Supabase badge load skipped:', err);
-    }
-
-    try {
-      // Ensure the two core profiles exist remotely. This makes trainer-to-athlete assignment reliable across logins/devices.
-      await ensureRemoteAthlete(cleanProfiles[0]);
-      await ensureRemoteAthlete(cleanProfiles[1]);
+      if (!remoteBadgeError) setBadgeDefinitions(mergeBadgeDefinitions([], (remoteBadges || []).map(mapRemoteBadgeToLocal).filter(b => !isBadgeTombstoned(b))));
 
       const { data: remoteAthletes, error: athleteLoadError } = await supabase.from('athlete_profiles').select('*');
-      if (athleteLoadError) console.warn('Supabase athlete load skipped:', athleteLoadError);
-      const activeRemoteAthletes = (remoteAthletes || []).filter(remoteAthleteIsActive);
-      const remoteAthleteMap = new Map<string, any>();
-      activeRemoteAthletes.forEach((a:any)=>remoteAthleteMap.set(a.id, a));
-      const mappedAthletes: AthleteProfile[] = activeRemoteAthletes.map(mapRemoteAthleteToLocal);
-      if (mappedAthletes.length) setAthletes(prev => canonicaliseAthletes(mergeUniqueById(prev, mappedAthletes)));
-
-      const cleanStartKey = 'bbb_v2213_fresh_start_done';
-      const cleanStartPending = localStorage.getItem(cleanStartKey) === 'pending-remote';
-      if (cleanStartPending) {
-        const remoteCleared = await clearRemoteDiaryAndWorkouts();
-        setEvents([]); setPlans([]); setLogs([]);
-        setStorage('bbb_events', []); setStorage('bbb_plans', []); setStorage('bbb_logs', []);
-        localStorage.setItem(cleanStartKey, 'done');
-        if (!remoteCleared) console.warn('Remote clean start did not fully delete old rows. Old rows will be ignored by the clean-start cutoff, but add the V2.2.13 delete policies in Supabase to enable admin deletion.');
+      if (!athleteLoadError) {
+        const mappedAthletes = (remoteAthletes || []).filter(remoteAthleteIsActive).map(mapRemoteAthleteToLocal);
+        const canonical = canonicaliseAthletes(mappedAthletes.length ? mappedAthletes : cleanProfiles);
+        setAthletes(canonical);
+        const current = canonical.find(a => a.id === currentUser.athlete_id) || canonical.find(a => normalise(a.email) === normalise(currentUser.email));
+        if (current) setProfile(current);
       }
 
-      const { data: remotePlans } = cleanStartPending ? { data: [] as any[] } : await supabase.from('workout_programmes').select('*').order('created_at', { ascending:false });
-      const { data: remotePlanExercises } = await supabase.from('workout_programme_exercises').select('*').order('sort_order', { ascending:true });
-      const remotePlansRaw = (remotePlans || []).filter(isAfterCleanStart);
-      const mappedPlans: WorkoutPlan[] = remotePlansRaw.map((p:any)=>({
-        id:p.id,
-        remote_id:p.id,
-        name:p.name,
-        focus:p.focus || '',
-        session_type:(p.session_type || 'Gym') as SessionType,
-        owner_athlete_id:p.owner_athlete_id || undefined,
-        created_by_user_id:p.created_by || undefined,
-        is_template:p.is_template !== false,
-        exercises:(remotePlanExercises || []).filter((e:any)=>e.programme_id===p.id).map((e:any)=>({
-          exercise_id:e.exercise_id,
-          name:e.exercise_name || e.exercise_id,
-          planned_sets:e.planned_sets || 3,
-          planned_reps:e.planned_reps || '8-12',
-          planned_weight:e.planned_weight || '',
-          notes:e.notes || '',
-        }))
-      }));
-      if (mappedPlans.length) setPlans(prev => mergeUniqueById(prev, mappedPlans));
+      const [{ data: remotePlans, error: plansError }, { data: remotePlanExercises, error: planExercisesError }] = await Promise.all([
+        supabase.from('workout_programmes').select('*').order('created_at', { ascending:false }),
+        supabase.from('workout_programme_exercises').select('*').order('sort_order', { ascending:true }),
+      ]);
+      if (!plansError && !planExercisesError) {
+        const mappedPlans: WorkoutPlan[] = (remotePlans || []).filter(isAfterCleanStart).map((p:any)=>({
+          id:p.id, remote_id:p.id, name:p.name, focus:p.focus || '', session_type:(p.session_type || 'Gym') as SessionType,
+          owner_athlete_id:p.owner_athlete_id || undefined, created_by_user_id:p.created_by || undefined, is_template:p.is_template !== false,
+          exercises:(remotePlanExercises || []).filter((e:any)=>e.programme_id===p.id).map((e:any)=>({
+            exercise_id:e.exercise_id, name:e.exercise_name || e.exercise_id, planned_sets:e.planned_sets || 3,
+            planned_reps:e.planned_reps || '8-12', planned_weight:e.planned_weight || '', notes:e.notes || '',
+          })),
+        }));
+        setPlans(mappedPlans);
+      }
 
-      const { data: remoteSessions } = cleanStartPending ? { data: [] as any[] } : await supabase.from('training_sessions').select('*').order('session_date', { ascending:true });
-      const remoteSessionsRaw = (remoteSessions || []).filter(isAfterCleanStart);
-      const mappedEvents: CalendarEvent[] = remoteSessionsRaw.map((e:any)=>{
-        const remoteAthlete = remoteAthleteMap.get(e.athlete_id);
-        const athleteProfile = remoteAthlete ? mapRemoteAthleteToLocal(remoteAthlete) : undefined;
-        return {
-          id:e.id,
-          remote_id:e.id,
-          athlete_id:athleteProfile?.id || e.athlete_id,
-          athlete_email:athleteProfile?.email || remoteAthlete?.email || undefined,
-          athlete_name:athleteProfile?.name || remoteAthleteDisplayName(remoteAthlete) || undefined,
-          workout_plan_id:e.programme_id || undefined,
-          remote_plan_id:e.programme_id || undefined,
-          date:dateOnly(e.session_date),
-          time:normaliseTime(e.start_time),
-          title:e.title,
-          type:(e.session_type || 'Gym') as SessionType,
-          status:(e.status || 'planned') as CalendarEvent['status'],
-          class_name:e.class_name || undefined,
-        };
-      });
-      if (mappedEvents.length) setEvents(prev => mergeUniqueById(prev, mappedEvents));
+      const { data: remoteSessions, error: sessionsError } = await supabase.from('training_sessions').select('*').order('session_date', { ascending:true });
+      if (!sessionsError) {
+        const athleteLookup = new Map((remoteAthletes || []).map((a:any)=>[a.id,a]));
+        const mappedEvents: CalendarEvent[] = (remoteSessions || []).filter(isAfterCleanStart).map((e:any)=>{
+          const remoteAthlete = athleteLookup.get(e.athlete_id) as any;
+          const athleteProfile = remoteAthlete ? mapRemoteAthleteToLocal(remoteAthlete) : undefined;
+          return {
+            id:e.id, remote_id:e.id, athlete_id:athleteProfile?.id || e.athlete_id,
+            athlete_email:athleteProfile?.email || remoteAthlete?.email || undefined,
+            athlete_name:athleteProfile?.name || remoteAthleteDisplayName(remoteAthlete) || undefined,
+            workout_plan_id:e.programme_id || undefined, remote_plan_id:e.programme_id || undefined,
+            date:dateOnly(e.session_date), time:normaliseTime(e.start_time), end_time:normaliseTime(e.end_time),
+            title:e.title, type:(e.session_type || 'Gym') as SessionType,
+            status:(e.status || 'planned') as CalendarEvent['status'], class_name:e.class_name || undefined,
+          };
+        });
+        setEvents(canonicaliseEvents(mappedEvents));
+      }
 
-      const { data: remoteLogs } = cleanStartPending ? { data: [] as any[] } : await supabase.from('workout_logs').select('*').order('created_at', { ascending:false });
-      const mappedLogs: WorkoutLog[] = (remoteLogs || []).map((l:any)=>({
-        id:l.id,
-        session_id:l.session_id || undefined,
-        date:dateOnly(l.log_date || l.created_at),
-        session_type:(l.session_type || 'Gym') as SessionType,
-        exercise_id:l.exercise_id || '',
-        exercise_name:l.exercise_name || 'Exercise',
-        sets:Array.isArray(l.sets) ? l.sets : [],
-        reps:l.reps || undefined,
-        weight:l.weight || undefined,
-        rpe:l.rpe || undefined,
-        notes:l.notes || undefined,
-        completed:l.completed !== false,
-      }));
-      if (mappedLogs.length) setLogs(prev => mergeUniqueById(prev, mappedLogs));
+      const { data: remoteLogs, error: logsError } = await supabase.from('workout_logs').select('*').order('created_at', { ascending:false });
+      if (!logsError) setLogs((remoteLogs || []).map((l:any)=>({
+        id:l.id, session_id:l.session_id || undefined, date:dateOnly(l.log_date || l.created_at),
+        session_type:(l.session_type || 'Gym') as SessionType, exercise_id:l.exercise_id || '',
+        exercise_name:l.exercise_name || 'Exercise', sets:Array.isArray(l.sets) ? l.sets : [], reps:l.reps || undefined,
+        weight:l.weight || undefined, rpe:l.rpe || undefined, notes:l.notes || undefined, completed:l.completed !== false,
+      })));
 
-      const { data: remoteMetrics } = await supabase.from('athlete_metrics').select('*').order('metric_date', { ascending:true });
-      const mappedMetrics: AthleteMetric[] = (remoteMetrics || []).map((m:any)=>({
-        id:m.id,
-        remote_id:m.id,
-        athlete_id:m.athlete_id,
-        metric_date:dateOnly(m.metric_date),
-        weight_kg:m.weight_kg ? Number(m.weight_kg) : undefined,
-        height_cm:m.height_cm ? Number(m.height_cm) : undefined,
-        body_fat_percent:m.body_fat_percent ? Number(m.body_fat_percent) : undefined,
-        notes:m.notes || undefined,
-      }));
-      if (mappedMetrics.length) setMetrics(prev => mergeUniqueById(prev, mappedMetrics));
+      const { data: remoteMetrics, error: metricsError } = await supabase.from('athlete_metrics').select('*').order('metric_date', { ascending:true });
+      if (!metricsError) setMetrics((remoteMetrics || []).map((m:any)=>({
+        id:m.id, remote_id:m.id, athlete_id:m.athlete_id, metric_date:dateOnly(m.metric_date),
+        weight_kg:m.weight_kg ? Number(m.weight_kg) : undefined, height_cm:m.height_cm ? Number(m.height_cm) : undefined,
+        body_fat_percent:m.body_fat_percent ? Number(m.body_fat_percent) : undefined, notes:m.notes || undefined,
+      })));
 
-      const { data: settings } = await supabase.from('app_settings').select('*').in('key', ['dashboard_focus_text']);
-      const focus = (settings || []).find((r:any)=>r.key==='dashboard_focus_text')?.value;
-      if (focus) setDashboardFocusText(focus);
+      const { data: settings, error: settingsError } = await supabase.from('app_settings').select('*').in('key', ['dashboard_focus_text']);
+      if (!settingsError) {
+        const focus = (settings || []).find((r:any)=>r.key==='dashboard_focus_text')?.value;
+        if (focus) setDashboardFocusText(focus);
+      }
+
+      const { data: targetRows, error: targetError } = await supabase.from('nutrition_targets').select('*').order('updated_at', { ascending:false });
+      if (!targetError) setNutritionTargets((targetRows || []).map((t:any)=>({
+        id:t.id, remote_id:t.id, athlete_id:t.athlete_id, calories:Number(t.calories || 0), protein_g:Number(t.protein_g || 0),
+        carbs_g:Number(t.carbs_g || 0), fats_g:Number(t.fats_g || 0), water_ml:Number(t.water_ml || 0), effective_date:dateOnly(t.effective_date || todayISO()),
+      })));
+
+      const startDate = iso(addDays(new Date(), -120));
+      const { data: entryRows, error: entryError } = await supabase.from('nutrition_entries').select('*').gte('entry_date', startDate).order('created_at', { ascending:false });
+      if (!entryError) setNutritionEntries((entryRows || []).map((n:any)=>({
+        id:n.id, remote_id:n.id, athlete_id:n.athlete_id, entry_date:dateOnly(n.entry_date), meal_type:(n.meal_type || 'Snack') as MealType,
+        name:n.name || 'Nutrition entry', serving:n.serving || undefined, calories:Number(n.calories || 0), protein_g:Number(n.protein_g || 0),
+        carbs_g:Number(n.carbs_g || 0), fats_g:Number(n.fats_g || 0), water_ml:Number(n.water_ml || 0), notes:n.notes || undefined, created_at:n.created_at,
+      })));
+
+      setLastSynced(new Date());
     } catch (err) {
-      console.warn('Supabase training sync skipped:', err);
+      console.warn('Supabase cloud sync skipped:', err);
+    } finally {
+      syncInFlight.current = false;
+      setSyncing(false);
     }
-  }
+  }, [currentUser?.id, currentUser?.email, currentUser?.athlete_id]);
 
-  const visibleEvents = useMemo(() => {
+  const requestSync = useCallback((reason='auto') => {
+    if (syncTimer.current) window.clearTimeout(syncTimer.current);
+    syncTimer.current = window.setTimeout(() => loadFromSupabase(reason), reason === 'realtime' ? 350 : 80);
+  }, [loadFromSupabase]);
+
+  useEffect(() => { if (currentUser) requestSync('login'); }, [currentUser?.id, requestSync]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const refresh = () => requestSync('focus');
+    const onVisibility = () => { if (document.visibilityState === 'visible') requestSync('visible'); };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [currentUser?.id, requestSync]);
+
+  useEffect(() => {
+    if (!currentUser || !['dashboard','calendar','today','nutrition','stats','admin'].includes(page)) return;
+    requestSync(`page:${page}`);
+  }, [page, currentUser?.id, requestSync]);
+
+  useEffect(() => {
+    if (!supabase || !currentUser) return;
+    const tables = ['training_sessions','workout_programmes','workout_programme_exercises','workout_logs','athlete_metrics','badges','app_settings','nutrition_targets','nutrition_entries'];
+    const channel = supabase.channel(`bbb-v4-${currentUser.id}`);
+    tables.forEach(table => channel.on('postgres_changes' as any, { event:'*', schema:'public', table }, () => requestSync('realtime')));
+    channel.subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUser?.id, requestSync]);
+
+  const visibleEvents = useMemo(() => currentUser ? events.filter(e => isEventVisibleForUser(e, currentUser)) : [], [events, currentUser]);
+  const visibleLogs = useMemo(() => {
     if (!currentUser) return [];
-    return events.filter(e => isEventVisibleForUser(e, currentUser));
-  }, [events, currentUser?.id, currentUser?.athlete_id, currentUser?.email]);
-  const liveBadges = useMemo(() => buildBadges(logs, visibleEvents, badgeDefinitions), [logs, visibleEvents, badgeDefinitions]);
+    const sessionIds = new Set(visibleEvents.map(e=>e.id));
+    return logs.filter(l => !l.session_id || sessionIds.has(l.session_id));
+  }, [logs, visibleEvents, currentUser]);
+  const liveBadges = useMemo(() => buildBadges(visibleLogs, visibleEvents, badgeDefinitions), [visibleLogs, visibleEvents, badgeDefinitions]);
+  const targetForProfile = useMemo(() => nutritionTargets.find(t => t.athlete_id === profile.remote_id || t.athlete_id === profile.id) || { ...defaultNutritionTarget, athlete_id: profile.remote_id || profile.id }, [nutritionTargets, profile.id, profile.remote_id]);
+  const nutritionForProfile = useMemo(() => nutritionEntries.filter(n => n.athlete_id === profile.remote_id || n.athlete_id === profile.id), [nutritionEntries, profile.id, profile.remote_id]);
 
   async function handleLogout(){ if (supabase) await supabase.auth.signOut(); setCurrentUser(null); localStorage.removeItem('bbb_current_user'); setDrawerOpen(false); }
   function go(p: Page){ setPage(p); setDrawerOpen(false); window.scrollTo({top:0, behavior:'smooth'}); }
@@ -991,107 +1120,152 @@ function App() {
   if (!currentUser) return <LoginScreen users={users} setCurrentUser={setCurrentUser} />;
 
   const visibleNav = NAV.filter(n => !n.roles || n.roles.includes(currentUser.role));
-  const activeTitle = page === 'session' ? (activeSession?.class_name || activeSession?.type === 'FMA' ? 'Class Session' : 'Complete Workout') : visibleNav.find(n=>n.page===page)?.label || 'Dashboard';
+  const activeTitle = page === 'session' ? (activeSession?.class_name || activeSession?.type === 'FMA' ? 'Class Session' : 'Complete Workout') : visibleNav.find(n=>n.page===page)?.label || 'Home';
 
-  return <div className="appShell">
-    <header className="topbar">
-      <button className="iconButton" onClick={()=>setDrawerOpen(true)} aria-label="Open menu"><Menu size={24}/></button>
-      <div className="topBrand"><Shield size={22}/><div><b>BlackBeltBootcamp</b><span>Training OS V3.0</span></div></div>
-      <div className="topContext"><span>{currentUser.name}</span><em>{titleCase(currentUser.role)}</em></div>
+  return <div className="appShell v4Shell">
+    <header className="topbar v4Topbar">
+      <button className="iconButton navTrigger" onClick={()=>setDrawerOpen(true)} aria-label="Open menu"><Menu size={25}/></button>
+      <button className="topBrand" onClick={()=>go('dashboard')} aria-label="Go home"><span className="brandShield"><Shield size={24}/></span><div><b>BlackBeltBootcamp <i>V4.0</i></b><span>Discipline builds freedom</span></div></button>
+      <button className="syncPill" onClick={()=>requestSync('manual')} disabled={syncing}><Cloud size={16}/><span>{syncing ? 'Syncing…' : displaySyncTime(lastSynced)}</span><RefreshCw size={15} className={syncing ? 'spinning' : ''}/></button>
+      <button className="profileChip" onClick={()=>go('profile')}><span className="avatar">{profile.profile_photo_url ? <img src={profile.profile_photo_url} alt=""/> : getInitials(profile.name)}</span><span><b>{currentUser.name}</b><em>{titleCase(currentUser.role)}</em></span><ChevronRight size={17}/></button>
     </header>
 
     {drawerOpen && <div className="drawerBackdrop" onClick={()=>setDrawerOpen(false)} />}
-    <aside className={`drawer ${drawerOpen ? 'open' : ''}`}>
-      <div className="drawerHead"><div className="brand"><Shield className="brandIcon"/><div><h1>BlackBeltBootcamp</h1><span>Training OS V3.0</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
-      <button className="drawerUser drawerUserButton" onClick={()=>go('profile')}><b>{currentUser.name}</b><span>{currentUser.email}</span><em>{titleCase(currentUser.role)} profile · open profile</em></button>
-      <nav>{visibleNav.map(n => <button key={n.page} onClick={() => go(n.page)} className={page===n.page?'active':''}>{n.icon}<span>{n.label}</span></button>)}</nav>
+    <aside className={`drawer v4Drawer ${drawerOpen ? 'open' : ''}`}>
+      <div className="drawerHead"><div className="brand"><span className="brandShield"><Shield size={24}/></span><div><h1>BlackBeltBootcamp</h1><span>Training OS V4.0</span></div></div><button className="iconButton" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
+      <button className="drawerUser drawerUserButton" onClick={()=>go('profile')}><span className="avatar large">{getInitials(profile.name)}</span><span className="drawerIdentity"><b>{currentUser.name}</b><span>{currentUser.email}</span><em>{titleCase(currentUser.role)} profile</em></span><ChevronRight size={18}/></button>
+      <nav>{['Athlete','Training','Progress','Admin'].map(group => {
+        const links = visibleNav.filter(n=>n.group===group);
+        if (!links.length) return null;
+        return <div className="navGroup" key={group}><small>{group}</small>{links.map(n => <button key={n.page} onClick={() => go(n.page)} className={page===n.page?'active':''}>{n.icon}<span>{n.label}</span></button>)}</div>;
+      })}</nav>
       <button className="logoutButton" onClick={handleLogout}><LogOut size={18}/> Sign out</button>
     </aside>
 
-    <main className="pageFrame">
-      <section className="pageHeader"><span className="muted">{profile.name} · {profile.gym}</span><h2>{activeTitle}</h2></section>
-      {page==='dashboard' && <Dashboard logs={logs} events={visibleEvents} badges={liveBadges} profile={profile} focusText={dashboardFocusText} setPage={go} openSession={openSession}/>} 
+    <main className="pageFrame v4PageFrame">
+      {page!=='dashboard' && page!=='session' && <PageIntro page={page} title={activeTitle} profile={profile} />}
+      {page==='dashboard' && <Dashboard logs={visibleLogs} events={visibleEvents} badges={liveBadges} profile={profile} focusText={dashboardFocusText} target={targetForProfile} nutritionEntries={nutritionForProfile} setPage={go} openSession={openSession}/>} 
       {page==='library' && <ExerciseLibrary exercises={exercises} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} />}
-      {page==='import' && <Importer setExercises={setExercises} reloadSupabase={loadFromSupabase} exercises={exercises} />}
+      {page==='import' && <Importer setExercises={setExercises} reloadSupabase={()=>loadFromSupabase('import')} exercises={exercises} />}
       {page==='builder' && <WorkoutBuilder exercises={exercises} plans={plans} setPlans={setPlans} currentUser={currentUser} athletes={athletes} users={users} events={events} setEvents={setEvents} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} />}
-      {page==='today' && <Today events={visibleEvents} exercises={exercises} logs={logs} setLogs={setLogs} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} openSession={openSession}/>} 
-      {page==='calendar' && <TrainingCalendar events={visibleEvents} allEvents={events} setEvents={setEvents} openSession={openSession} currentUser={currentUser} profile={profile} plans={plans}/>} 
-      {page==='session' && <SessionWorkout session={activeSession} setSession={setActiveSession} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} profile={profile} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} onSessionFinished={()=>{ setActiveSession(null); go('dashboard'); }}/>} 
+      {page==='today' && <Today events={visibleEvents} exercises={exercises} logs={visibleLogs} setLogs={setLogs} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} openSession={openSession}/>} 
+      {page==='calendar' && <TrainingCalendar events={visibleEvents} allEvents={events} setEvents={setEvents} openSession={openSession} currentUser={currentUser} profile={profile} plans={plans} syncing={syncing} lastSynced={lastSynced} onRefresh={()=>requestSync('calendar')} />}
+      {page==='session' && <SessionWorkout session={activeSession} setSession={setActiveSession} exercises={exercises} plans={plans} logs={logs} setLogs={setLogs} events={events} setEvents={setEvents} profile={profile} onPlay={(e)=>setVideo({url: safeVideo(e), title: titleCase(e.name)})} onSessionFinished={()=>{ setActiveSession(null); go('dashboard'); requestSync('completed'); }}/>} 
       {page==='fma' && <FmaClasses events={events} setEvents={setEvents} openSession={openSession} profile={profile}/>} 
-      {page==='stats' && <Stats logs={logs} events={visibleEvents} profile={profile} metrics={metrics}/>} 
+      {page==='nutrition' && <Nutrition profile={profile} target={targetForProfile} entries={nutritionForProfile} setTargets={setNutritionTargets} allTargets={nutritionTargets} setEntries={setNutritionEntries} allEntries={nutritionEntries}/>} 
+      {page==='stats' && <Stats logs={visibleLogs} events={visibleEvents} profile={profile} metrics={metrics}/>} 
       {page==='badges' && <Badges badges={liveBadges}/>} 
       {page==='profile' && <Profile profile={profile} metrics={metrics} setMetrics={setMetrics} setProfile={async (p)=>{const saved=await saveRemoteProfile(p); setProfile(saved); setAthletes(athletes.map(a=>a.id===p.id? saved : a));}}/>} 
       {page==='admin' && <Admin profile={profile} events={events} setEvents={setEvents} plans={plans} setPlans={setPlans} logs={logs} setLogs={setLogs} exercises={exercises} setExercises={setExercises} users={users} setUsers={setUsers} athletes={athletes} setAthletes={setAthletes} metrics={metrics} setMetrics={setMetrics} dashboardFocusText={dashboardFocusText} setDashboardFocusText={setDashboardFocusText} badgeDefinitions={badgeDefinitions} setBadgeDefinitions={setBadgeDefinitions}/>} 
     </main>
+
+    <nav className="bottomNav" aria-label="Primary navigation">
+      <button className={page==='dashboard'?'active':''} onClick={()=>go('dashboard')}><Home/><span>Home</span></button>
+      <button className={['calendar','today','builder','fma','session'].includes(page)?'active':''} onClick={()=>go('calendar')}><Activity/><span>Training</span></button>
+      <button className={page==='nutrition'?'active':''} onClick={()=>go('nutrition')}><Utensils/><span>Nutrition</span></button>
+      <button className={['stats','badges'].includes(page)?'active':''} onClick={()=>go('stats')}><Trophy/><span>Progress</span></button>
+      <button onClick={()=>setDrawerOpen(true)}><MoreHorizontal/><span>More</span></button>
+    </nav>
     {video && <VideoModal title={video.title} url={video.url} onClose={()=>setVideo(null)} />}
   </div>;
 }
 
+function PageIntro({page,title,profile}:{page:Page;title:string;profile:AthleteProfile}){
+  const copy: Partial<Record<Page,string>> = {
+    calendar:'Plan the work. Show up. Get better.', today:'Everything you need for the session in front of you.',
+    library:'Find the right movement, understand it, then train it well.', builder:'Build your training. Your way.',
+    fma:'Classes, attendance and academy training in one place.', nutrition:'Better food. A stronger you.',
+    stats:'Consistent work. Real results.', badges:'Milestones that reward the work.', profile:'Your goals, preferences and progress data.',
+    admin:'Coach, plan and review every athlete from one organised workspace.', import:'Manage the exercise catalogue and demonstration library.'
+  };
+  return <section className={`pageIntro pageIntro-${page}`}><div><span className="eyebrow">{profile.name} · {profile.gym || 'BlackBeltBootcamp'}</span><h2>{title}</h2><p>{copy[page] || 'Train. Progress. Belong.'}</p></div><div className="introMotif"><Shield/><span>Better skills<br/>Stronger people</span></div></section>;
+}
 function LoginScreen({setCurrentUser}:{users:AppUser[]; setCurrentUser:(u:AppUser)=>void}){
   const [email,setEmail]=useState('');
   const [password,setPassword]=useState('');
   const [resetEmail,setResetEmail]=useState('');
   const [status,setStatus]=useState('');
   const [busy,setBusy]=useState(false);
+  const [showReset,setShowReset]=useState(false);
   async function login(e: React.FormEvent){
     e.preventDefault(); setStatus(''); setBusy(true);
     try {
-      if (!supabase) { setStatus('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Netlify.'); return; }
+      if (!supabase) { setStatus('Supabase is not configured. Add the environment variables in Netlify.'); return; }
       const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error || !data.user) { setStatus(error?.message || 'Unable to sign in.'); return; }
       setCurrentUser(await buildAppUserFromAuthUser(data.user));
     } finally { setBusy(false); }
   }
   async function resetPassword(){
-    setStatus('');
-    if(!supabase){ setStatus('Supabase is not configured.'); return; }
-    const target = (resetEmail || email).trim();
-    if(!target){ setStatus('Enter your email first, then press password reset.'); return; }
-    const { error } = await supabase.auth.resetPasswordForEmail(target, { redirectTo: window.location.origin });
-    setStatus(error ? error.message : `Password reset email sent to ${target}.`);
+    setStatus(''); if(!supabase){setStatus('Supabase is not configured.');return;}
+    const target=(resetEmail||email).trim(); if(!target){setStatus('Enter your email first.');return;}
+    const {error}=await supabase.auth.resetPasswordForEmail(target,{redirectTo:window.location.origin});
+    setStatus(error?error.message:`Password reset email sent to ${target}.`);
   }
-  return <main className="loginPage">
-    <section className="loginCard">
-      <div className="loginBrand"><Shield size={42}/><div><h1>BlackBeltBootcamp</h1><p>Secure cloud training hub for Alex and James Hiles</p></div></div>
-      <form onSubmit={login} className="loginForm">
-        <label>Email<input value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" placeholder="Enter your Supabase Auth email"/></label>
-        <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password"/></label>
-        {status && <div className={`status ${status.toLowerCase().includes('unable') || status.toLowerCase().includes('error') ? 'error' : ''}`}>{status}</div>}
-        <button className="primary big" type="submit" disabled={!email || !password || busy}>{busy ? 'Signing in...' : 'Sign in'}</button>
-      </form>
-      <div className="passwordResetBox"><label>Password reset email<input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="Use login email if blank"/></label><button onClick={resetPassword}><KeyRound size={16}/>Send password reset</button></div>
-      <p className="muted smallText">V3 uses Supabase Auth. The old local/fallback login system has been removed so the same data follows Alex and James across devices.</p>
-    </section>
-  </main>
+  return <main className="loginPage v4Login"><section className="loginVisual"><span className="brandShield giant"><Shield/></span><span className="eyebrow">BlackBeltBootcamp V4.0</span><h1>Discipline builds freedom.</h1><p>A secure training hub for programmes, progress, nutrition and performance.</p><div className="loginPromises"><span><CheckCircle2/>Cloud synced</span><span><CheckCircle2/>Coach assigned</span><span><CheckCircle2/>Athlete focused</span></div></section><section className="loginCard"><div className="loginBrand"><span className="brandShield"><Shield/></span><div><h2>Welcome back</h2><p>Sign in to continue your training.</p></div></div><form onSubmit={login} className="loginForm"><label>Email<input value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com"/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password"/></label>{status&&<div className={`status ${/unable|error|invalid/i.test(status)?'error':''}`}>{status}</div>}<button className="primary big wide" type="submit" disabled={!email||!password||busy}>{busy?'Signing in…':'Sign in'}<ChevronRight/></button></form><button className="forgotButton" onClick={()=>setShowReset(v=>!v)}>Forgot your password?</button>{showReset&&<div className="passwordResetBox"><label>Password reset email<input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="Use login email if blank"/></label><button onClick={resetPassword}><KeyRound size={16}/>Send reset link</button></div>}<p className="secureNote"><Shield size={15}/>Secure Supabase authentication · data follows you across devices</p></section></main>
 }
-
-function Dashboard({logs,events,badges,profile,focusText,setPage,openSession}:{logs:WorkoutLog[];events:CalendarEvent[];badges:Badge[];profile:AthleteProfile;focusText:string;setPage:(p:Page)=>void;openSession:(e:CalendarEvent)=>void}) {
+function Dashboard({logs,events,badges,profile,focusText,target,nutritionEntries,setPage,openSession}:{logs:WorkoutLog[];events:CalendarEvent[];badges:Badge[];profile:AthleteProfile;focusText:string;target:NutritionTarget;nutritionEntries:NutritionEntry[];setPage:(p:Page)=>void;openSession:(e:CalendarEvent)=>void}) {
   const today = todayISO();
-  const todaySessions = events.filter(e=>e.date===today).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
-  const next = todaySessions.find(e=>e.status==='planned') || events.find(e=>e.status==='planned');
-  const sessionsDone = events.filter(e=>e.status==='completed').length;
-  const exercisesDone = logs.filter(l=>l.completed).length;
+  const weekStart = iso(startOfWeek());
+  const weekEnd = iso(addDays(weekStart,6));
+  const todaySessions = events.filter(e=>dateOnly(e.date)===today).sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+  const futureSessions = events.filter(e=>e.status==='planned' && dateOnly(e.date)>=today).sort((a,b)=>`${dateOnly(a.date)} ${a.time||''}`.localeCompare(`${dateOnly(b.date)} ${b.time||''}`));
+  const next = todaySessions.find(e=>e.status==='planned') || futureSessions[0];
+  const weekEvents = events.filter(e=>dateOnly(e.date)>=weekStart && dateOnly(e.date)<=weekEnd);
+  const weekCompleted = weekEvents.filter(e=>e.status==='completed').length;
+  const weekPercent = clampPercent(weekCompleted, Math.max(weekEvents.length,1));
   const streak = calcStreak(logs, events);
-  const weekComplete = Math.round((events.filter(e=>e.status==='completed').length / Math.max(events.length,1))*100);
-  const nextBadges = badges.filter(b=>!b.unlocked).sort((a,b)=>(b.progress-a.progress) || ((a.target_value-a.current_count)-(b.target_value-b.current_count))).slice(0,3);
-  return <div className="dashboardGrid">
-    <section className="heroPanel athleteHero">
-      <div>
-        <span className="eyebrow">Today's focus</span>
-        <h1>{profile.name.split(' ')[0]}, {focusText || 'keep stacking the small wins.'}</h1>
-        <p>{profile.goal}</p>
-        <div className="heroActions"><button className="primary" onClick={()=> next ? openSession(next) : setPage('today')}><PlayCircle size={18}/>Start next session</button><button onClick={()=>setPage('calendar')}><CalendarDays size={18}/>View week</button></div>
-      </div>
-      <div className="readinessRing"><b>{weekComplete}%</b><span>Weekly completion</span></div>
+  const todayNutrition = nutritionTotals(nutritionEntries.filter(e=>dateOnly(e.entry_date)===today));
+  const nextBadges = badges.filter(b=>!b.unlocked).sort((a,b)=>{
+    const aRemaining=(a.target_value-a.current_count)/Math.max(1,a.target_value);
+    const bRemaining=(b.target_value-b.current_count)/Math.max(1,b.target_value);
+    return aRemaining-bRemaining || b.progress-a.progress;
+  }).slice(0,3);
+  const firstName = profile.name.split(' ')[0] || profile.name;
+  return <div className="dashboardV4">
+    <section className="welcomeHero">
+      <div className="welcomeCopy"><span>Good to see you back,</span><h1>{firstName}</h1><p>Same discipline. A stronger you.</p></div>
+      <div className="heroAthleteArt" aria-hidden="true"><span>Train<br/>Progress<br/>Belong</span><Shield/></div>
     </section>
-    <div className="kpiRow dashboardKpis"><Kpi label="Sessions Completed" value={sessionsDone}/><Kpi label="Exercises Completed" value={exercisesDone}/><Kpi label="Training Streak" value={`${streak} days`}/><Kpi label="Today’s Sessions" value={todaySessions.length}/></div>
-    <section className="panel"><div className="row between"><h3>Today’s Schedule</h3><button className="miniBtn" onClick={()=>setPage('calendar')}>Open calendar</button></div>{todaySessions.length===0 && <p className="muted">No sessions planned today. Add one from the calendar or FMA classes page.</p>}{todaySessions.map(s=><SessionRow key={s.id} event={s} onClick={()=>openSession(s)}/>)}</section>
-    <section className="panel"><h3>Next Achievement</h3>{nextBadges.map(b=><div className="badgeProgress" key={b.id}><span>{b.icon}</span><div><b>{b.name}</b><p>{b.description}</p><div className="progress"><i style={{width:`${b.progress}%`}}/></div></div></div>)}</section>
+
+    <div className="sectionHeading"><div><span className="eyebrow">Your day</span><h2>Today</h2></div><time>{new Date().toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'})}</time></div>
+    <div className="dashboardMainGrid">
+      <section className="featureCard nextSessionCard">
+        <div className="cardLabel"><CalendarDays size={18}/><span>Next session</span></div>
+        {next ? <><div className="sessionVisual"><span className={classNameForType(next.type)}>{next.type}</span><Dumbbell/></div><h3>{next.title}</h3><p><Clock size={16}/>{dateOnly(next.date)===today?'Today':dayLabel(next.date)} · {next.time || 'Time TBC'}</p><button className="primary wide" onClick={()=>openSession(next)}>View session details<ChevronRight size={18}/></button></> : <><div className="emptyFeature"><CalendarDays/><h3>No session scheduled</h3><p>Open the calendar to plan the next session.</p></div><button className="primary wide" onClick={()=>setPage('calendar')}>Open calendar</button></>}
+      </section>
+
+      <section className="featureCard weeklyProgressCard">
+        <div className="cardLabel"><BarChart3 size={18}/><span>Weekly progress</span></div>
+        <div className="ringLayout"><div className="progressRing" style={{'--progress':`${weekPercent * 3.6}deg`} as React.CSSProperties}><div><b>{weekCompleted}/{weekEvents.length || 0}</b><span>Sessions complete</span></div></div><p>Consistent action creates extraordinary results.</p></div>
+        <div className="weekDots">{Array.from({length:7},(_,i)=>{const d=iso(addDays(weekStart,i));const dayEvents=weekEvents.filter(e=>dateOnly(e.date)===d);const completed=dayEvents.some(e=>e.status==='completed');const planned=dayEvents.some(e=>e.status==='planned');return <span key={d} className={completed?'complete':planned?'planned':''}><i>{completed?'✓':planned?'•':''}</i>{dateFromIso(d).toLocaleDateString('en-GB',{weekday:'short'}).slice(0,2)}</span>})}</div>
+      </section>
+
+      <section className="featureCard nutritionSummaryCard" onClick={()=>setPage('nutrition')} role="button" tabIndex={0}>
+        <div className="cardLabel"><Utensils size={18}/><span>Nutrition today</span><ChevronRight size={17}/></div>
+        <div className="miniRings">
+          <MetricRing value={todayNutrition.protein_g} target={target.protein_g} label="Protein" suffix="g" tone="green"/>
+          <MetricRing value={todayNutrition.carbs_g} target={target.carbs_g} label="Carbs" suffix="g" tone="orange"/>
+          <MetricRing value={todayNutrition.fats_g} target={target.fats_g} label="Fats" suffix="g" tone="yellow"/>
+          <MetricRing value={Math.round(todayNutrition.water_ml/100)/10} target={Math.round(target.water_ml/100)/10} label="Water" suffix="L" tone="blue"/>
+        </div>
+      </section>
+
+      <section className="featureCard streakCard"><div className="cardLabel"><Flame size={18}/><span>Streak</span></div><strong>{streak}</strong><b>Days</b><p>Keep the momentum going.</p></section>
+
+      <section className="featureCard achievementsCard"><div className="cardLabel"><Trophy size={18}/><span>Next achievements</span><button className="textButton" onClick={()=>setPage('badges')}><ChevronRight size={17}/></button></div>{nextBadges.length ? nextBadges.map(b=><div className="achievementLine" key={b.id}><span>{b.icon}</span><div><div><b>{b.name}</b><em>{b.current_count}/{b.target_value}</em></div><div className="progress"><i style={{width:`${b.progress}%`}}/></div></div></div>) : <p className="muted">All current achievements unlocked.</p>}</section>
+
+      <section className="featureCard focusCard"><div className="cardLabel"><Target size={18}/><span>Today's focus</span></div><blockquote>{focusText || 'Keep stacking the small wins.'}</blockquote><p>A little better every day.</p></section>
+    </div>
   </div>
 }
+function MetricRing({value,target,label,suffix,tone}:{value:number;target:number;label:string;suffix:string;tone:string}){
+  const pct=clampPercent(value,target);
+  const display=Number.isInteger(value)?value:value.toFixed(1);
+  return <div className={`metricRing ${tone}`}><div className="metricCircle" style={{'--progress':`${pct * 3.6}deg`} as React.CSSProperties}><b>{display}{suffix}</b></div><strong>{label}</strong><span>of {target}{suffix}</span></div>
+}
 function Kpi({label,value}:{label:string;value:string|number}){ return <div className="kpi"><span>{label}</span><b>{value}</b></div> }
-function SessionRow({event,onClick}:{event:CalendarEvent; onClick:()=>void}){ return <button className="sessionRow" onClick={onClick}><span className={classNameForType(event.type)}>{event.type}</span><div><b>{event.time || 'Time TBC'} · {event.title}</b><em>{dateOnly(event.date)}</em></div><ChevronRight size={18}/></button> }
-
+function SessionRow({event,onClick}:{event:CalendarEvent; onClick:()=>void}){ return <button className="sessionRow" onClick={onClick}><span className={classNameForType(event.type)}>{event.type}</span><div><b>{event.time || 'Time TBC'} · {event.title}</b><em>{dayLabel(event.date)}</em></div><ChevronRight size={18}/></button> }
 function ExerciseLibrary({exercises,onPlay}:{exercises:Exercise[];onPlay:(e:Exercise)=>void}){
   const [q,setQ]=useState(''); const [category,setCategory]=useState('all'); const [body,setBody]=useState('all'); const [muscle,setMuscle]=useState('all');
   const cats=useMemo(()=>['all',...Array.from(new Set(exercises.map(e=>e.category).filter(Boolean))).sort()], [exercises]);
@@ -1121,23 +1295,38 @@ function ExerciseCard({e,onPlay}:{e:Exercise;onPlay:(e:Exercise)=>void}) {
   </article>
 }
 
-function TrainingCalendar({events,allEvents,setEvents,openSession,currentUser,profile,plans}:{events:CalendarEvent[];allEvents:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;openSession:(e:CalendarEvent)=>void;currentUser:AppUser;profile:AthleteProfile;plans:WorkoutPlan[]}){
+function TrainingCalendar({events,allEvents,setEvents,openSession,currentUser,profile,plans,syncing,lastSynced,onRefresh}:{events:CalendarEvent[];allEvents:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;openSession:(e:CalendarEvent)=>void;currentUser:AppUser;profile:AthleteProfile;plans:WorkoutPlan[];syncing:boolean;lastSynced:Date|null;onRefresh:()=>void}){
   const [weekOffset,setWeekOffset]=useState(0);
   const baseStart = addDays(startOfWeek(), weekOffset*7);
   const visibleWeek = Array.from({length:7}, (_,i)=>addDays(baseStart, i));
+  const [selectedDate,setSelectedDate]=useState(()=>todayISO());
+  useEffect(()=>{ if(!visibleWeek.some(d=>iso(d)===selectedDate)) setSelectedDate(iso(visibleWeek[0])); },[weekOffset]);
   const [newDate,setNewDate]=useState(todayISO()); const [newTime,setNewTime]=useState('18:00'); const [newTitle,setNewTitle]=useState('Training Session'); const [newType,setNewType]=useState<SessionType>('Gym'); const [newPlanId,setNewPlanId]=useState('none');
+  const selectedEvents=events.filter(e=>dateOnly(e.date)===selectedDate).sort((a,b)=>(normaliseTime(a.time)||'').localeCompare(normaliseTime(b.time)||''));
+  const selectedEvent=selectedEvents[0];
   async function add(){
     const plan = plans.find(p=>p.id===newPlanId);
     const event: CalendarEvent = {id:crypto.randomUUID(), date:dateOnly(newDate), time:normaliseTime(newTime), title: plan?.name || newTitle, type: plan?.session_type || newType, status:'planned', workout_plan_id: plan?.id, athlete_id: currentUser.athlete_id || profile.id, athlete_email: currentUser.email, athlete_name: currentUser.name};
     const synced = await saveRemoteSession(event, plan, profile);
     setEvents([synced, ...allEvents.filter(e=>e.id!==synced.id && e.remote_id!==synced.remote_id)]);
+    setSelectedDate(dateOnly(newDate));
   }
-  function renderWeek(days: Date[], title: string){
-    return <div className="weekBlock"><h4>{title}</h4><div className="weekGrid">{days.map(d=>{ const dayEvents=events.filter(e=>dateOnly(e.date)===iso(d)).sort((a,b)=>(normaliseTime(a.time)||'').localeCompare(normaliseTime(b.time)||'')); return <div className="dayColumn" key={iso(d)}><h4>{dayLabel(d)}</h4>{dayEvents.length===0 && <span className="emptyDay">No session</span>}{dayEvents.map(e=><button key={e.id} className={`calendarSession ${e.status}`} onClick={()=>openSession(e)}><span>{e.time}</span><b>{e.title}</b><em>{e.type}</em></button>)}</div>})}</div></div>
-  }
-  return <div className="calendarPage">
-    <section className="panel"><div className="row between calendarControls"><div><h3>Training Calendar</h3><p className="muted">Use the controls to move through past and future weeks. Click any session to open the completion page.</p></div><div className="weekNav"><button onClick={()=>setWeekOffset(weekOffset-1)}><ArrowLeft size={16}/>Previous</button><button onClick={()=>setWeekOffset(0)}><RefreshCw size={16}/>Current</button><button onClick={()=>setWeekOffset(weekOffset+1)}>Next<ArrowRight size={16}/></button></div></div><div className="calendarWeeks">{renderWeek(visibleWeek, weekOffset===0 ? 'Current Week' : `Week ${weekOffset>0?'+':''}${weekOffset}`)}</div></section>
-    <section className="panel compact addSessionPanel"><h3>Add Session</h3><p className="muted">Create a diary item for the signed-in profile. Attach a saved workout if you want the session to include editable exercises.</p><div className="formGrid calendarForm"><label>Date<input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)}/></label><label>Time<input type="time" value={newTime} onChange={e=>setNewTime(e.target.value)}/></label><label>Type<select value={newType} onChange={e=>setNewType(e.target.value as SessionType)}>{sessionTypes.map(t=><option key={t}>{t}</option>)}</select></label><label>Saved Workout<select value={newPlanId} onChange={e=>setNewPlanId(e.target.value)}><option value="none">No saved workout</option>{plans.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label className="fullSpan">Title<input value={newTitle} onChange={e=>setNewTitle(e.target.value)}/></label></div><div className="formActions"><button className="primary" onClick={add}><Plus size={16}/>Add to calendar</button></div></section>
+  const weekLabel=`${dayLabel(visibleWeek[0])} – ${dayLabel(visibleWeek[6])}`;
+  return <div className="trainingCalendarV4">
+    <section className="featureCard calendarBoard">
+      <div className="calendarHeader"><div><h3>Training Calendar</h3><p><Cloud size={16}/>{syncing?'Syncing diary…':displaySyncTime(lastSynced)}</p></div><button className="iconButton" onClick={onRefresh} disabled={syncing}><RefreshCw className={syncing?'spinning':''}/></button></div>
+      <div className="weekSelector"><button className="iconButton" onClick={()=>setWeekOffset(v=>v-1)}><ChevronLeft/></button><strong>{weekLabel}</strong><button className="iconButton" onClick={()=>setWeekOffset(v=>v+1)}><ChevronRight/></button></div>
+      <div className="weekStrip">{visibleWeek.map(d=>{const key=iso(d);const dayEvents=events.filter(e=>dateOnly(e.date)===key);const done=dayEvents.some(e=>e.status==='completed');const planned=dayEvents.some(e=>e.status==='planned');return <button key={key} className={`${selectedDate===key?'selected':''} ${done?'done':planned?'planned':''}`} onClick={()=>setSelectedDate(key)}><span>{dateFromIso(d).toLocaleDateString('en-GB',{weekday:'short'})}</span><b>{dateFromIso(d).getUTCDate()}</b><i>{done?'✓':planned?'•':''}</i></button>})}</div>
+      <div className="calendarLegend"><span><i className="doneDot">✓</i>Completed</span><span><i className="plannedDot">•</i>Scheduled</span><span><i/>No session</span></div>
+    </section>
+
+    <section className="selectedDayPanel"><div className="row between"><div><span className="eyebrow">Selected day</span><h3>{dateFromIso(selectedDate).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</h3></div><span>{selectedEvents.length} {selectedEvents.length===1?'session':'sessions'}</span></div>
+      <div className="daySessionList">{selectedEvents.length ? selectedEvents.map(event=><button className={`calendarListCard typeLine-${event.type.toLowerCase()}`} key={event.id} onClick={()=>openSession(event)}><div className="sessionIcon"><Dumbbell/></div><div><span>{event.time || 'Time TBC'}{event.end_time?` – ${event.end_time}`:''}</span><h4>{event.title}</h4><p>{event.class_name ? 'Class session · attendance tracking' : event.workout_plan_id ? 'Assigned workout · exercise logging' : `${event.type} training session`}</p></div><span className={classNameForType(event.type)}>{event.class_name?'Class':event.type}</span><ChevronRight/></button>) : <div className="emptyCalendarDay"><CalendarDays/><h4>No training planned</h4><p>Add a session below or move to another week.</p></div>}</div>
+    </section>
+
+    {selectedEvent && <section className="featureCard sessionPeek"><div><span className={classNameForType(selectedEvent.type)}>{selectedEvent.class_name?'Class':selectedEvent.type}</span><h3>{selectedEvent.title}</h3><p><CalendarDays size={16}/>{dayLabel(selectedEvent.date)} <Clock size={16}/>{selectedEvent.time || 'Time TBC'}</p></div><button className="primary" onClick={()=>openSession(selectedEvent)}>Open session<ChevronRight size={17}/></button></section>}
+
+    <section className="panel compact addSessionPanel"><div className="row between"><div><h3>Add Session</h3><p className="muted">Add a class, ad-hoc session or an existing saved workout to this profile.</p></div><Plus/></div><div className="formGrid calendarForm"><label>Date<input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)}/></label><label>Time<input type="time" value={newTime} onChange={e=>setNewTime(e.target.value)}/></label><label>Type<select value={newType} onChange={e=>setNewType(e.target.value as SessionType)}>{sessionTypes.map(t=><option key={t}>{t}</option>)}</select></label><label>Saved Workout<select value={newPlanId} onChange={e=>setNewPlanId(e.target.value)}><option value="none">No saved workout</option>{plans.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label className="fullSpan">Title<input value={newTitle} onChange={e=>setNewTitle(e.target.value)}/></label></div><div className="formActions"><button className="primary wide" onClick={add}><Plus size={16}/>Add to calendar</button></div></section>
   </div>
 }
 const sessionTypes: SessionType[] = ['Home','Gym','FMA','MMA','BJJ','Boxing','Kickboxing','Cardio','Mobility','Physio','Recovery','Strength'];
@@ -1227,10 +1416,11 @@ function getSessionExercises(session: CalendarEvent, exercises: Exercise[], plan
 function QuickCompletion({exercises,logs,setLogs,onPlay}:{exercises:Exercise[];logs:WorkoutLog[];setLogs:(l:WorkoutLog[])=>void;onPlay:(e:Exercise)=>void}){ const picks=exercises.slice(0,3); return <div className="quickBox"><h3>Quick Exercise Completion</h3><p className="muted">Use this when James completes a standalone drill outside a planned session.</p><div className="grid three">{picks.map(e=><div className="miniExercise" key={e.exercise_id}><b>{titleCase(e.name)}</b><span>{titleCase(bodyOf(e))}</span><div className="row actions"><button onClick={()=>onPlay(e)}>Demo</button><button className="primary" onClick={()=>setLogs([{id:crypto.randomUUID(),date:todayISO(),session_type:'Home',exercise_id:e.exercise_id,exercise_name:titleCase(e.name),sets:[],completed:true},...logs])}>Complete</button></div></div>)}</div></div> }
 
 function WorkoutBuilder({exercises,plans,setPlans,currentUser,athletes,users,events,setEvents,onPlay}:{exercises:Exercise[];plans:WorkoutPlan[];setPlans:(p:WorkoutPlan[])=>void;currentUser:AppUser;athletes:AthleteProfile[];users:AppUser[];events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;onPlay:(e:Exercise)=>void}){
-  const bodies=useMemo(()=>Array.from(new Set(exercises.map(e=>bodyOf(e)).filter(Boolean))).sort(),[exercises]);
-  const [body,setBody]=useState(bodies[0] || 'waist');
+  const bodies=useMemo(()=>Array.from(new Set(['full body',...exercises.map(e=>bodyOf(e)).filter(Boolean)])).sort(),[exercises]);
+  const [body,setBody]=useState(bodies.includes('back')?'back':bodies[0] || 'waist');
+  const [muscle,setMuscle]=useState('all');
   const [q,setQ]=useState('');
-  const [name,setName]=useState('James Strength Session');
+  const [name,setName]=useState('Strength & Athletic Development');
   const [focus,setFocus]=useState('MMA strength and athletic development');
   const [sessionType,setSessionType]=useState<SessionType>('Gym');
   const [selected,setSelected]=useState<ProgrammeExercise[]>([]);
@@ -1238,59 +1428,57 @@ function WorkoutBuilder({exercises,plans,setPlans,currentUser,athletes,users,eve
   const [scheduleDate,setScheduleDate]=useState(todayISO());
   const [scheduleTime,setScheduleTime]=useState('18:00');
   const [builderStatus,setBuilderStatus]=useState('');
+  const [previewing,setPreviewing]=useState<Exercise|null>(null);
   const selfProfile = profileForUser(currentUser, athletes);
-  const list=exercises.filter(e=>bodyOf(e)===body && `${e.name} ${e.target} ${e.equipment}`.toLowerCase().includes(q.toLowerCase())).slice(0,80);
+  const bodyFiltered=exercises.filter(e=>body==='full body'||bodyOf(e)===body||e.target==='full body');
+  const muscles=useMemo(()=>['all',...Array.from(new Set(bodyFiltered.flatMap(e=>[e.target,...(e.secondary_muscles||[])]).filter(Boolean))).sort()],[body,exercises]);
+  useEffect(()=>{if(!muscles.includes(muscle)) setMuscle('all')},[body,muscles.join('|')]);
+  const list=bodyFiltered.filter(e=>(muscle==='all'||e.target===muscle||(e.secondary_muscles||[]).includes(muscle)) && `${e.name} ${e.target} ${(e.secondary_muscles||[]).join(' ')} ${e.equipment}`.toLowerCase().includes(q.toLowerCase())).slice(0,100);
   function addExercise(e: Exercise){
+    if(selected.some(item=>item.exercise_id===e.exercise_id)){ setBuilderStatus(`${titleCase(e.name)} is already in the draft.`); return; }
     setSelected([...selected,{exercise_id:e.exercise_id,name:titleCase(e.name),planned_sets:3,planned_reps:'8-12',planned_weight:''}]);
+    setBuilderStatus(`${titleCase(e.name)} added to the draft.`);
   }
-  function updateSelected(index:number, field:keyof ProgrammeExercise, value:any){
-    setSelected(selected.map((item,i)=>i===index?{...item,[field]: field==='planned_sets' ? Number(value) : value}:item));
-  }
-  function moveExercise(index:number, direction:-1|1){
-    const next=[...selected]; const target=index+direction;
-    if(target<0 || target>=next.length) return;
-    [next[index], next[target]] = [next[target], next[index]];
-    setSelected(next);
-  }
-  function previewExercise(ex: ProgrammeExercise){
-    const detailed = exercises.find(e=>e.exercise_id===ex.exercise_id);
-    if (detailed) onPlay(detailed);
-  }
-  function resetDraft(){ setEditingPlanId(''); setName('James Strength Session'); setFocus('MMA strength and athletic development'); setSessionType('Gym'); setSelected([]); }
+  function updateSelected(index:number, field:keyof ProgrammeExercise, value:any){ setSelected(selected.map((item,i)=>i===index?{...item,[field]: field==='planned_sets' ? Number(value) : value}:item)); }
+  function moveExercise(index:number, direction:-1|1){ const next=[...selected]; const target=index+direction; if(target<0||target>=next.length)return; [next[index],next[target]]=[next[target],next[index]]; setSelected(next); }
+  function detailedExercise(ex:ProgrammeExercise){ return exercises.find(e=>e.exercise_id===ex.exercise_id); }
+  function resetDraft(){ setEditingPlanId(''); setName('Strength & Athletic Development'); setFocus('MMA strength and athletic development'); setSessionType('Gym'); setSelected([]); setBuilderStatus('New workout draft started.'); }
   async function savePlan(){
-    if(!selected.length){ setBuilderStatus('Select at least one exercise before saving.'); return null; }
-    const plan: WorkoutPlan={id:editingPlanId || crypto.randomUUID(),name,focus,session_type:sessionType,exercises:selected,created_by_user_id:currentUser.id,owner_athlete_id: currentUser.role==='athlete' ? (currentUser.athlete_id || selfProfile.id) : undefined,is_template: currentUser.role!=='athlete'};
-    const nextPlans = editingPlanId ? plans.map(p=>p.id===editingPlanId?{...p,...plan, remote_id:(p as any).remote_id}:p) : [plan,...plans];
-    setPlans(nextPlans);
-    setStorage('bbb_plans', nextPlans);
-    const remoteId = await saveRemoteProgramme(plan);
-    const syncedPlan = remoteId ? {...plan, remote_id: remoteId} : plan;
-    const syncedNext = editingPlanId ? nextPlans.map(p=>p.id===plan.id?{...p,...syncedPlan}:p) : nextPlans.map(p=>p.id===plan.id?syncedPlan:p);
-    setPlans(syncedNext); setStorage('bbb_plans', syncedNext);
-    setBuilderStatus(editingPlanId ? `${name} has been updated.` : `${name} has been saved.`);
-    if(!editingPlanId) setEditingPlanId(plan.id);
-    return syncedPlan;
+    if(!selected.length){setBuilderStatus('Select at least one exercise before saving.');return null;}
+    const plan:WorkoutPlan={id:editingPlanId||crypto.randomUUID(),name,focus,session_type:sessionType,exercises:selected,created_by_user_id:currentUser.id,owner_athlete_id:currentUser.role==='athlete'?(currentUser.athlete_id||selfProfile.id):undefined,is_template:currentUser.role!=='athlete'};
+    const nextPlans=editingPlanId?plans.map(p=>p.id===editingPlanId?{...p,...plan,remote_id:p.remote_id}:p):[plan,...plans];
+    setPlans(nextPlans);setStorage('bbb_plans',nextPlans);
+    const remoteId=await saveRemoteProgramme(plan);const syncedPlan=remoteId?{...plan,remote_id:remoteId}:plan;
+    const syncedNext=nextPlans.map(p=>p.id===plan.id?{...p,...syncedPlan}:p);setPlans(syncedNext);setStorage('bbb_plans',syncedNext);
+    setBuilderStatus(editingPlanId?`${name} updated.`:`${name} saved.`);if(!editingPlanId)setEditingPlanId(plan.id);return syncedPlan;
   }
-  function editPlan(plan: WorkoutPlan){ setEditingPlanId(plan.id); setName(plan.name); setFocus(plan.focus || ''); setSessionType(plan.session_type || 'Gym'); setSelected(plan.exercises || []); setBuilderStatus(`Editing ${plan.name}.`); window.scrollTo({top:0, behavior:'smooth'}); }
-  function deletePlan(planId:string){ const next=plans.filter(p=>p.id!==planId); setPlans(next); setStorage('bbb_plans', next); if(editingPlanId===planId) resetDraft(); }
-  const assignedPlanIds = new Set(events.filter(e=>isEventVisibleForUser(e, currentUser)).flatMap(e=>[e.workout_plan_id, e.remote_plan_id]).filter(Boolean) as string[]);
-  const visibleSavedPlans = currentUser.role==='athlete' ? plans.filter(p=>p.owner_athlete_id===currentUser.athlete_id || assignedPlanIds.has(p.id) || (!!p.remote_id && assignedPlanIds.has(p.remote_id))) : plans;
-  function createProfileCopy(plan: WorkoutPlan){
-    const copy: WorkoutPlan = { ...plan, id:crypto.randomUUID(), remote_id:undefined, name:`${plan.name} - ${currentUser.name} copy`, owner_athlete_id: currentUser.athlete_id || selfProfile.id, created_by_user_id: currentUser.id, is_template:false, exercises:[...(plan.exercises||[])] };
-    setPlans([copy, ...plans]); setStorage('bbb_plans', [copy, ...plans]); editPlan(copy);
-  }
-  async function addToMyCalendar(plan: WorkoutPlan){
-    const assigned = resolveAssignmentProfile(selfProfile, users, athletes);
-    const event: CalendarEvent = { id:crypto.randomUUID(), athlete_id:assigned.id, athlete_email:assigned.email || currentUser.email, athlete_name:assigned.name || currentUser.name, assigned_by_user_id:currentUser.id, workout_plan_id:plan.id, date:dateOnly(scheduleDate), time:normaliseTime(scheduleTime), title:plan.name, type:plan.session_type || 'Gym', status:'planned' };
-    const remoteSynced = await saveRemoteSession(event, plan, selfProfile);
-    const next=[remoteSynced, ...events.filter(e=>e.id!==remoteSynced.id)];
-    setEvents(next);
-    setStorage('bbb_events', next);
-    setBuilderStatus(`${plan.name} has been added to ${assigned.name}'s calendar on ${dateOnly(scheduleDate)} at ${normaliseTime(scheduleTime)}.`);
-  }
-  return <section className="panel builderPage"><div><h3>Workout Builder</h3><p className="muted">Select a body part first, build a focused session, then save it. You can edit saved workouts or add them directly to your own calendar.</p></div><div className="grid three"><label>Workout Name<input value={name} onChange={e=>setName(e.target.value)}/></label><label>Training Focus<input value={focus} onChange={e=>setFocus(e.target.value)}/></label><label>Session Type<select value={sessionType} onChange={e=>setSessionType(e.target.value as SessionType)}>{sessionTypes.map(t=><option key={t}>{t}</option>)}</select></label></div><div className="builderLayout"><div><h4>1. Body Part</h4><div className="bodyList">{bodies.map(b=><button className={`listBtn ${b===body?'activeBody':''}`} onClick={()=>setBody(b)} key={b}><span>{titleCase(b)}</span><span>{exercises.filter(e=>bodyOf(e)===b).length}</span></button>)}</div></div><div><h4>2. Choose Exercises For {titleCase(body)}</h4><div className="searchBox"><Search size={16}/><input placeholder={`Search ${titleCase(body)} exercises`} value={q} onChange={e=>setQ(e.target.value)}/></div><div className="selectList">{list.map(e=><button className="listBtn" key={e.exercise_id} onClick={()=>addExercise(e)}><span>+ {titleCase(e.name)}</span><small>{titleCase(e.target)}</small></button>)}</div></div><div className="builderPlan"><div className="row between"><h4>{editingPlanId ? 'Editing Workout' : 'Draft Workout'}</h4><button className="miniBtn" onClick={savePlan} disabled={!selected.length}><Save size={16}/>{editingPlanId ? 'Update' : 'Save'}</button></div>{selected.length===0 && <p className="muted">Select exercises from the list.</p>}{selected.map((e,i)=><div className="preview editableExercise" key={`${e.exercise_id}-${i}`}><b>{i+1}. {e.name}</b><div className="miniGrid"><label>Sets<input type="number" value={e.planned_sets || 3} onChange={ev=>updateSelected(i,'planned_sets',ev.target.value)}/></label><label>Reps<input value={e.planned_reps || ''} onChange={ev=>updateSelected(i,'planned_reps',ev.target.value)}/></label><label>Weight<input value={e.planned_weight || ''} onChange={ev=>updateSelected(i,'planned_weight',ev.target.value)}/></label></div><div className="row actions"><button className="miniBtn" onClick={()=>previewExercise(e)}><Video size={14}/>Demo</button><button className="miniBtn" onClick={()=>moveExercise(i,-1)} disabled={i===0}>Up</button><button className="miniBtn" onClick={()=>moveExercise(i,1)} disabled={i===selected.length-1}>Down</button><button className="miniBtn dangerBtn" onClick={()=>setSelected(selected.filter((_,idx)=>idx!==i))}>Remove</button></div></div>)}{editingPlanId && <button onClick={resetDraft}>Start New Workout</button>}</div></div>{builderStatus && <div className="status">{builderStatus}</div>}<section className="panel inner"><h3>Saved Workouts</h3><p className="muted">Open any saved workout to view, edit, or add it to your own calendar.</p><div className="grid two scheduleSelf"><label>Session Date<input type="date" value={scheduleDate} onChange={e=>setScheduleDate(e.target.value)}/></label><label>Session Time<input type="time" value={scheduleTime} onChange={e=>setScheduleTime(e.target.value)}/></label></div>{visibleSavedPlans.length===0 ? <p className="muted">No saved programmes available for this profile yet.</p> : visibleSavedPlans.map(p=><div className="preview savedWorkout" key={p.id}><b>{p.name}</b><span>{p.focus}</span><em>{p.exercises.length} exercises · {p.session_type || 'Gym'}</em><div className="row actions"><button onClick={()=>editPlan(p)}>View / Edit</button>{currentUser.role==='athlete' && <button onClick={()=>createProfileCopy(p)}>Make My Copy</button>}<button className="primary" onClick={()=>addToMyCalendar(p)}><CalendarDays size={16}/>Add to My Calendar</button><button onClick={()=>deletePlan(p.id)}>Delete</button></div></div>)}</section></section>
+  function editPlan(plan:WorkoutPlan){setEditingPlanId(plan.id);setName(plan.name);setFocus(plan.focus||'');setSessionType(plan.session_type||'Gym');setSelected(plan.exercises||[]);setBuilderStatus(`Editing ${plan.name}.`);window.scrollTo({top:0,behavior:'smooth'});}
+  async function deletePlan(plan:WorkoutPlan){await deleteRemoteProgramme(plan);const next=plans.filter(p=>p.id!==plan.id&&p.remote_id!==plan.remote_id);setPlans(next);setStorage('bbb_plans',next);if(editingPlanId===plan.id)resetDraft();}
+  const assignedPlanIds=new Set(events.filter(e=>isEventVisibleForUser(e,currentUser)).flatMap(e=>[e.workout_plan_id,e.remote_plan_id]).filter(Boolean) as string[]);
+  const visibleSavedPlans=currentUser.role==='athlete'?plans.filter(p=>p.owner_athlete_id===currentUser.athlete_id||assignedPlanIds.has(p.id)||!!p.remote_id&&assignedPlanIds.has(p.remote_id)):plans;
+  function createProfileCopy(plan:WorkoutPlan){const copy:WorkoutPlan={...plan,id:crypto.randomUUID(),remote_id:undefined,name:`${plan.name} - ${currentUser.name} copy`,owner_athlete_id:currentUser.athlete_id||selfProfile.id,created_by_user_id:currentUser.id,is_template:false,exercises:(plan.exercises||[]).map(e=>({...e}))};setPlans([copy,...plans]);setStorage('bbb_plans',[copy,...plans]);editPlan(copy);}
+  async function addToMyCalendar(plan:WorkoutPlan){const assigned=resolveAssignmentProfile(selfProfile,users,athletes);const event:CalendarEvent={id:crypto.randomUUID(),athlete_id:assigned.id,athlete_email:assigned.email||currentUser.email,athlete_name:assigned.name||currentUser.name,assigned_by_user_id:currentUser.id,workout_plan_id:plan.id,date:dateOnly(scheduleDate),time:normaliseTime(scheduleTime),title:plan.name,type:plan.session_type||'Gym',status:'planned'};const remoteSynced=await saveRemoteSession(event,plan,selfProfile);const next=[remoteSynced,...events.filter(e=>e.id!==remoteSynced.id)];setEvents(next);setStorage('bbb_events',next);setBuilderStatus(`${plan.name} added to ${assigned.name}'s calendar for ${dateOnly(scheduleDate)} at ${normaliseTime(scheduleTime)}.`);}
+  const totalSets=selected.reduce((n,e)=>n+Number(e.planned_sets||0),0);
+  return <div className="workoutBuilderV4">
+    <section className="panel builderMeta"><div className="builderStepTitle"><Target/><div><span>Workout details</span><h3>Build the session</h3></div></div><div className="grid three"><label>Workout Name<input value={name} onChange={e=>setName(e.target.value)}/></label><label>Training Focus<input value={focus} onChange={e=>setFocus(e.target.value)}/></label><label>Session Type<select value={sessionType} onChange={e=>setSessionType(e.target.value as SessionType)}>{sessionTypes.map(t=><option key={t}>{t}</option>)}</select></label></div></section>
+
+    <section className="panel bodyAreaPanel"><div className="builderStepTitle"><span className="stepNumber">1</span><div><h3>Choose Body Area</h3><p>Select a body area, then refine by muscle group.</p></div></div><div className="pillScroller">{bodies.map(b=><button key={b} className={body===b?'active':''} onClick={()=>setBody(b)}>{titleCase(b)}</button>)}</div><div className="builderFilters"><div className="searchBox"><Search/><input value={q} onChange={e=>setQ(e.target.value)} placeholder={`Search ${titleCase(body)} exercises`}/></div><select value={muscle} onChange={e=>setMuscle(e.target.value)}>{muscles.map(m=><option value={m} key={m}>{m==='all'?'All muscles / targets':titleCase(m)}</option>)}</select></div></section>
+
+    <section className="panel exercisePickerPanel"><div className="row between"><div className="builderStepTitle"><span className="stepNumber">2</span><div><h3>Select Exercises</h3><p>{list.length} matching exercises for {titleCase(body)}</p></div></div><span className="draftCount">{selected.length} in draft</span></div><div className="exercisePickerList">{list.map(ex=><div className="exercisePickerRow" key={ex.exercise_id}><div className="exerciseThumb"><Dumbbell/></div><div className="exercisePickerCopy"><b>{titleCase(ex.name)}</b><span>{[ex.target,...(ex.secondary_muscles||[]).slice(0,2)].filter(Boolean).map(titleCase).join(' · ')}</span></div><button className="previewButton" onClick={()=>setPreviewing(ex)}><Eye size={17}/>Preview</button><button className="addButton" onClick={()=>addExercise(ex)}><Plus size={18}/>Add</button></div>)}</div></section>
+
+    <section className="panel draftWorkoutPanel"><div className="row between"><div className="builderStepTitle"><span className="stepNumber">3</span><div><h3>Your Workout (Draft)</h3><p>{selected.length} exercises · {totalSets} total sets</p></div></div>{selected.length>0&&<button className="textButton" onClick={()=>setSelected([])}><Trash2 size={16}/>Clear all</button>}</div>{selected.length===0?<div className="emptyDraft"><ListChecks/><h4>Your draft is empty</h4><p>Preview exercises above, then add the right movements.</p></div>:<div className="draftExerciseList">{selected.map((item,index)=>{const detail=detailedExercise(item);return <div className="draftExerciseRow" key={`${item.exercise_id}-${index}`}><div className="dragHandle"><GripVertical/><span>{index+1}</span></div><div className="draftMain"><b>{item.name}</b><span>{detail?[detail.target,...(detail.secondary_muscles||[]).slice(0,2)].filter(Boolean).map(titleCase).join(' · '):'Assigned exercise'}</span><div className="draftFields"><label>Sets<input type="number" value={item.planned_sets||3} onChange={e=>updateSelected(index,'planned_sets',e.target.value)}/></label><label>Reps<input value={item.planned_reps||''} onChange={e=>updateSelected(index,'planned_reps',e.target.value)}/></label><label>Weight<input value={item.planned_weight||''} onChange={e=>updateSelected(index,'planned_weight',e.target.value)}/></label></div></div><div className="draftActions"><button onClick={()=>detail&&setPreviewing(detail)} disabled={!detail}><Eye/></button><button onClick={()=>moveExercise(index,-1)} disabled={index===0}><ArrowUp/></button><button onClick={()=>moveExercise(index,1)} disabled={index===selected.length-1}><ArrowDown/></button><button className="dangerIcon" onClick={()=>setSelected(selected.filter((_,i)=>i!==index))}><Trash2/></button></div></div>})}</div>}
+      <div className="draftFooter"><div className="draftStats"><span><Clock/>~{Math.max(15,selected.length*8)} min</span><span><Dumbbell/>{selected.length} exercises</span><span><ListChecks/>{totalSets} sets</span></div><button className="primary saveWorkoutButton" onClick={savePlan} disabled={!selected.length}><Save/>{editingPlanId?'Update Workout':'Save Workout'}<ChevronRight/></button></div>{editingPlanId&&<button className="secondaryWide" onClick={resetDraft}>Start a new workout</button>}{builderStatus&&<div className="status">{builderStatus}</div>}</section>
+
+    <section className="panel savedWorkoutsPanel"><div className="row between"><div><span className="eyebrow">Your library</span><h3>Saved Workouts</h3></div><div className="scheduleInputs"><input type="date" value={scheduleDate} onChange={e=>setScheduleDate(e.target.value)}/><input type="time" value={scheduleTime} onChange={e=>setScheduleTime(e.target.value)}/></div></div>{visibleSavedPlans.length===0?<p className="muted">No saved workouts available yet.</p>:<div className="savedWorkoutGrid">{visibleSavedPlans.map(plan=><article className="savedWorkoutCard" key={plan.id}><div><span className={classNameForType(plan.session_type||'Gym')}>{plan.session_type||'Gym'}</span><h4>{plan.name}</h4><p>{plan.focus}</p><em>{plan.exercises.length} exercises</em></div><div className="savedWorkoutActions"><button onClick={()=>editPlan(plan)}><Edit3/>View / edit</button>{currentUser.role==='athlete'&&<button onClick={()=>createProfileCopy(plan)}><Plus/>Make my copy</button>}<button className="primary" onClick={()=>addToMyCalendar(plan)}><CalendarDays/>Add to calendar</button><button className="dangerIcon" onClick={()=>deletePlan(plan)}><Trash2/></button></div></article>)}</div>}</section>
+
+    {previewing&&<ExercisePreviewSheet exercise={previewing} onClose={()=>setPreviewing(null)} onAdd={()=>{addExercise(previewing);setPreviewing(null)}}/>}
+  </div>
 }
 
+function ExercisePreviewSheet({exercise,onClose,onAdd}:{exercise:Exercise;onClose:()=>void;onAdd:()=>void}){
+  const url=safeVideo(exercise);
+  return <div className="modalBackdrop previewBackdrop" onClick={onClose}><section className="exercisePreviewSheet" onClick={e=>e.stopPropagation()}><div className="sheetHandle"/><button className="closeSheet" onClick={onClose}><X/></button><div className="previewMedia">{url?<video src={url} controls playsInline preload="metadata"/>:<div className="videoMissing"><Video/><span>No demo video available</span></div>}</div><div className="previewDetails"><div className="row between"><div><span className="tag">{titleCase(exercise.equipment||'Exercise')}</span><h3>{titleCase(exercise.name)}</h3></div></div><p>{sentence(exercise.description||'Review the exercise demonstration and target muscles before adding it to the workout.')}</p><div className="chips">{[exercise.target,...(exercise.secondary_muscles||[])].filter(Boolean).map(m=><span key={m}>{titleCase(m)}</span>)}</div><details><summary>Instructions</summary>{(exercise.instructions||[]).length?<ol>{(exercise.instructions||[]).filter(Boolean).map((instruction,i)=><li key={i}>{sentence(instruction)}</li>)}</ol>:<p className="muted">No written instructions are stored for this exercise.</p>}</details><button className="primary wide" onClick={onAdd}>Add to Workout<Plus/></button></div></section></div>
+}
 function FmaClasses({events,setEvents,openSession,profile}:{events:CalendarEvent[];setEvents:(e:CalendarEvent[])=>void;openSession:(e:CalendarEvent)=>void;profile:AthleteProfile}){
   const [classOptions,setClassOptions]=useState(() => storage('bbb_fma_classes', fmaClasses));
   const [selectedName,setSelectedName]=useState(classOptions[0]?.name || 'Advanced MMA');
@@ -1311,16 +1499,73 @@ function FmaClasses({events,setEvents,openSession,profile}:{events:CalendarEvent
   return <div className="fmaLayout"><section className="panel"><h3>FMA Chester Classes</h3><p className="muted">Select a class, choose a date and time, then add it to James’s calendar as a class session. Class sessions track attendance only — no sets, reps or exercise log required.</p><div className="classList">{classOptions.map(c=><button className={selected?.name===c.name?'selected':''} onClick={()=>setSelectedName(c.name)} key={c.name}><b>{c.name}</b><span>{c.focus}</span></button>)}</div><div className="panel inner newClassPanel"><h3>Add New Class Type</h3><p className="muted">Create additional class types for the FMA list. These are still class sessions and do not require sets, reps or exercise logs.</p><div className="formGrid two"><label>Class Name<input value={newClassName} onChange={e=>setNewClassName(e.target.value)} placeholder="e.g. Wrestling"/></label><label>Class Description<input value={newClassFocus} onChange={e=>setNewClassFocus(e.target.value)} placeholder="Short class focus"/></label></div><div className="formActions"><button onClick={addClassType} disabled={!newClassName.trim()}><Plus size={16}/>Add class type</button></div></div></section><section className="panel fmaSchedulePanel"><h3>Add {selected.name}</h3><p>{selected.focus}</p><div className="formGrid two"><label>Class Date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><label>Class Time<input type="time" value={time} onChange={e=>setTime(e.target.value)}/></label></div><div className="formActions"><button className="primary big" onClick={add}><CalendarDays size={18}/>Add class to calendar</button></div><h3>Upcoming FMA Sessions</h3>{events.filter(e=>e.type==='FMA').map(e=><SessionRow key={e.id} event={e} onClick={()=>openSession(e)}/>)}</section></div>
 }
 
+function Nutrition({profile,target,entries,setTargets,allTargets,setEntries,allEntries}:{profile:AthleteProfile;target:NutritionTarget;entries:NutritionEntry[];setTargets:(v:NutritionTarget[])=>void;allTargets:NutritionTarget[];setEntries:(v:NutritionEntry[])=>void;allEntries:NutritionEntry[]}){
+  const [date,setDate]=useState(todayISO());
+  const [targetDraft,setTargetDraft]=useState(target);
+  const [mealType,setMealType]=useState<MealType>('Breakfast');
+  const [name,setName]=useState(''); const [serving,setServing]=useState('');
+  const [calories,setCalories]=useState(''); const [protein,setProtein]=useState(''); const [carbs,setCarbs]=useState(''); const [fats,setFats]=useState(''); const [water,setWater]=useState('');
+  const [status,setStatus]=useState('');
+  useEffect(()=>setTargetDraft(target),[target.id,target.calories,target.protein_g,target.carbs_g,target.fats_g,target.water_ml]);
+  const dayEntries=entries.filter(e=>dateOnly(e.entry_date)===dateOnly(date));
+  const totals=nutritionTotals(dayEntries);
+  const remaining={calories:Math.max(0,target.calories-totals.calories),protein:Math.max(0,target.protein_g-totals.protein_g),carbs:Math.max(0,target.carbs_g-totals.carbs_g),fats:Math.max(0,target.fats_g-totals.fats_g),water:Math.max(0,target.water_ml-totals.water_ml)};
+  const grouped=MEAL_TYPES.map(type=>({type,entries:dayEntries.filter(e=>e.meal_type===type)})).filter(g=>g.entries.length);
+  async function saveTargets(){
+    const saved=await saveRemoteNutritionTarget({...targetDraft,athlete_id:profile.remote_id||profile.id,effective_date:date},profile);
+    const next=[...allTargets.filter(t=>t.athlete_id!==profile.id&&t.athlete_id!==profile.remote_id),saved];setTargets(next);setStatus('Daily nutrition targets saved and synced.');
+  }
+  async function addEntry(){
+    if(!name.trim()&&mealType!=='Hydration'){setStatus('Add a food or meal name.');return;}
+    const entry:NutritionEntry={id:crypto.randomUUID(),athlete_id:profile.remote_id||profile.id,entry_date:dateOnly(date),meal_type:mealType,name:name.trim()||'Water',serving:serving||undefined,calories:Number(calories||0),protein_g:Number(protein||0),carbs_g:Number(carbs||0),fats_g:Number(fats||0),water_ml:Number(water||0)};
+    const saved=await saveRemoteNutritionEntry(entry,profile);setEntries([saved,...allEntries]);setName('');setServing('');setCalories('');setProtein('');setCarbs('');setFats('');setWater('');setStatus(`${entry.name} added to ${mealType}.`);
+  }
+  async function removeEntry(entry:NutritionEntry){await deleteRemoteNutritionEntry(entry);setEntries(allEntries.filter(e=>e.id!==entry.id&&e.remote_id!==entry.remote_id));}
+  function quickWater(amount:number){setMealType('Hydration');setName('Water');setWater(String(amount));setCalories('0');setProtein('0');setCarbs('0');setFats('0');}
+  return <div className="nutritionV4">
+    <section className="nutritionHero"><div><span className="eyebrow">Nutrition</span><h2>Fuel Progress</h2><p>Better food. A stronger you.</p></div><div className="nutritionArt"><Apple/><span>Train<br/>Eat<br/>Recover<br/>Repeat</span></div></section>
+    <section className="featureCard nutritionToday"><div className="row between"><h3>Today's Nutrition</h3><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div><div className="nutritionRings"><MetricRing value={totals.protein_g} target={target.protein_g} label="Protein" suffix="g" tone="green"/><MetricRing value={totals.calories} target={target.calories} label="Calories" suffix="" tone="orange"/><MetricRing value={totals.carbs_g} target={target.carbs_g} label="Carbs" suffix="g" tone="orange"/><MetricRing value={totals.fats_g} target={target.fats_g} label="Fats" suffix="g" tone="yellow"/><MetricRing value={Math.round(totals.water_ml/100)/10} target={Math.round(target.water_ml/100)/10} label="Water" suffix="L" tone="blue"/></div></section>
+
+    <section className="panel targetEditor"><div className="row between"><div><h3>Daily Targets</h3><p className="muted">Set targets that suit the athlete and current training phase.</p></div><Target/></div><div className="grid five"><label>Calories<input type="number" value={targetDraft.calories} onChange={e=>setTargetDraft({...targetDraft,calories:Number(e.target.value)})}/></label><label>Protein (g)<input type="number" value={targetDraft.protein_g} onChange={e=>setTargetDraft({...targetDraft,protein_g:Number(e.target.value)})}/></label><label>Carbs (g)<input type="number" value={targetDraft.carbs_g} onChange={e=>setTargetDraft({...targetDraft,carbs_g:Number(e.target.value)})}/></label><label>Fats (g)<input type="number" value={targetDraft.fats_g} onChange={e=>setTargetDraft({...targetDraft,fats_g:Number(e.target.value)})}/></label><label>Water (ml)<input type="number" value={targetDraft.water_ml} onChange={e=>setTargetDraft({...targetDraft,water_ml:Number(e.target.value)})}/></label></div><button className="primary" onClick={saveTargets}><Save/>Save targets</button></section>
+
+    <section className="panel mealLogger"><div className="row between"><div><h3>Quick Add Meal</h3><p className="muted">Log food, macros or water throughout the day.</p></div><Utensils/></div><div className="mealTypeGrid">{MEAL_TYPES.map(type=><button className={mealType===type?'active':''} onClick={()=>setMealType(type)} key={type}>{type==='Breakfast'?<Sun/>:type==='Lunch'?<Coffee/>:type==='Dinner'?<Utensils/>:type==='Hydration'?<Droplets/>:<Apple/>}<b>{type}</b></button>)}</div><div className="grid three"><label className="fullSpan">Food / Meal Name<input value={name} onChange={e=>setName(e.target.value)} placeholder={mealType==='Hydration'?'Water':'e.g. Chicken rice bowl'}/></label><label>Serving<input value={serving} onChange={e=>setServing(e.target.value)} placeholder="e.g. 1 bowl"/></label><label>Calories<input type="number" value={calories} onChange={e=>setCalories(e.target.value)}/></label><label>Protein (g)<input type="number" value={protein} onChange={e=>setProtein(e.target.value)}/></label><label>Carbs (g)<input type="number" value={carbs} onChange={e=>setCarbs(e.target.value)}/></label><label>Fats (g)<input type="number" value={fats} onChange={e=>setFats(e.target.value)}/></label><label>Water (ml)<input type="number" value={water} onChange={e=>setWater(e.target.value)}/></label></div><div className="row actions"><button className="primary" onClick={addEntry}><Plus/>Add entry</button><button onClick={()=>quickWater(250)}><Droplets/>250 ml water</button><button onClick={()=>quickWater(500)}><Droplets/>500 ml water</button></div>{status&&<div className="status">{status}</div>}</section>
+
+    <div className="nutritionContentGrid"><section className="panel mealHistory"><h3>Meals & Entries</h3>{grouped.length===0?<div className="emptyDraft"><Utensils/><h4>No nutrition entries</h4><p>Add the first meal or water entry for this day.</p></div>:grouped.map(group=><div className="mealGroup" key={group.type}><div className="row between"><h4>{group.type}</h4><b>{group.entries.reduce((n,e)=>n+e.calories,0)} kcal</b></div>{group.entries.map(entry=><div className="nutritionEntryRow" key={entry.id}><div><b>{entry.name}</b><span>{entry.serving||'Entry'} · {entry.calories} kcal</span></div><div className="macroMini"><span>{entry.protein_g}g P</span><span>{entry.carbs_g}g C</span><span>{entry.fats_g}g F</span>{entry.water_ml>0&&<span>{entry.water_ml}ml</span>}</div><button className="dangerIcon" onClick={()=>removeEntry(entry)}><Trash2/></button></div>)}</div>)}</section>
+      <section className="featureCard remainingCard"><div className="cardLabel"><Target/><span>Remaining Today</span></div><div className="remainingGrid"><div><b>{remaining.protein}g</b><span>Protein</span></div><div><b>{remaining.calories}</b><span>Calories</span></div><div><b>{remaining.carbs}g</b><span>Carbs</span></div><div><b>{remaining.fats}g</b><span>Fats</span></div><div><b>{(remaining.water/1000).toFixed(1)}L</b><span>Water</span></div></div></section>
+    </div>
+  </div>
+}
+
 function Stats({logs,events,profile,metrics}:{logs:WorkoutLog[];events:CalendarEvent[];profile:AthleteProfile;metrics:AthleteMetric[]}){
-  const weightUnit = getWeightUnit(profile);
-  const completedSessions=events.filter(e=>e.status==='completed').length; const completedExercises=logs.filter(l=>l.completed).length; const streak=calcStreak(logs,events);
-  const byType=sessionTypes.map(t=>({type:t,count:events.filter(e=>e.status==='completed'&&e.type===t).length})).filter(x=>x.count>0);
-  const weekly=last14Days().map(d=>({date:d.slice(5),sessions:events.filter(e=>e.status==='completed'&&dateOnly(e.date)===d).length,exercises:logs.filter(l=>dateOnly(l.date)===d).length}));
-  const athleteMetrics = metrics.filter(m=>m.athlete_id===profile.remote_id || m.athlete_id===profile.id).sort((a,b)=>dateOnly(a.metric_date).localeCompare(dateOnly(b.metric_date)));
-  const weightTrend = athleteMetrics.map(m=>({date:dateOnly(m.metric_date).slice(5),weight: weightUnit === 'st' ? kgToStoneDecimal(m.weight_kg) : Number(m.weight_kg || 0)})).filter(m=>m.weight>0);
-  const missed=events.filter(e=>e.status==='missed').length;
-  const skippedSets=logs.flatMap(l=>l.sets||[]).filter(s=>s.completed===false).length;
-  return <div><div className="kpiRow statsKpis"><Kpi label="Sessions Completed" value={completedSessions}/><Kpi label="Exercises Completed" value={completedExercises}/><Kpi label="Workout Streak" value={`${streak} days`}/><Kpi label="Missed Sessions" value={missed}/><Kpi label="Skipped Sets" value={skippedSets}/><Kpi label="Current Weight" value={formatWeight(profile.weight_kg, weightUnit)}/></div><section className="panel"><h3>Training Volume</h3><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={weekly}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip/><Bar dataKey="sessions"/><Bar dataKey="exercises"/></BarChart></ResponsiveContainer></div></section>{weightTrend.length>0 && <section className="panel"><h3>Weight Trend ({weightUnit === 'st' ? 'stone' : 'kg'})</h3><p className="muted">Tracks logged body weight changes over time using your profile preference.</p><div className="chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={weightTrend}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip/><Line type="monotone" dataKey="weight"/></LineChart></ResponsiveContainer></div></section>}<section className="panel"><h3>This Week By Session Type</h3><div className="typeCountGrid">{byType.length===0?<p className="muted">No completed sessions yet.</p>:byType.map(t=><div className="typeCount" key={t.type}><span>{t.type}</span><b>{t.count}</b></div>)}</div></section></div>
+  const [period,setPeriod]=useState<'week'|'month'|'three'>('month');
+  const periodDays=period==='week'?7:period==='month'?30:90;
+  const cutoff=iso(addDays(new Date(),-periodDays+1));
+  const filteredLogs=logs.filter(l=>dateOnly(l.date)>=cutoff);
+  const filteredEvents=events.filter(e=>dateOnly(e.date)>=cutoff);
+  const setHistory=filteredLogs.flatMap(log=>(log.sets||[]).map(set=>{const weight=parseNumeric(set.weight);const reps=parseNumeric(set.reps);return {id:`${log.id}-${set.set_number}`,date:dateOnly(log.date),exercise_id:log.exercise_id,exercise_name:log.exercise_name,weight,reps,volume:weight*reps,estimated1rm:estimateOneRepMax(weight,reps),completed:set.completed!==false};})).filter(row=>row.weight>0&&row.reps>0&&row.completed);
+  const exerciseNames=Array.from(new Set(setHistory.map(s=>s.exercise_name))).sort();
+  const [selectedExercise,setSelectedExercise]=useState(exerciseNames[0]||'');
+  useEffect(()=>{if(exerciseNames.length&&!exerciseNames.includes(selectedExercise))setSelectedExercise(exerciseNames[0]);},[exerciseNames.join('|')]);
+  const selectedHistory=setHistory.filter(s=>s.exercise_name===selectedExercise).sort((a,b)=>a.date.localeCompare(b.date));
+  const chartData=Array.from(new Map(selectedHistory.map(row=>[row.date,row])).values()).map(row=>({date:row.date.slice(5),weight:row.weight,estimated1rm:row.estimated1rm}));
+  const bestByExercise=exerciseNames.map(name=>{const rows=setHistory.filter(s=>s.exercise_name===name);const best=rows.reduce((max,row)=>row.estimated1rm>max.estimated1rm?row:max,rows[0]);return best?{name,best}:null}).filter(Boolean).sort((a:any,b:any)=>b.best.estimated1rm-a.best.estimated1rm).slice(0,5) as {name:string;best:any}[];
+  const totalVolume=setHistory.reduce((n,row)=>n+row.volume,0);
+  const recentPRs=[...bestByExercise].slice(0,3);
+  const weightUnit=getWeightUnit(profile);
+  const athleteMetrics=metrics.filter(m=>m.athlete_id===profile.remote_id||m.athlete_id===profile.id).sort((a,b)=>dateOnly(a.metric_date).localeCompare(dateOnly(b.metric_date)));
+  const weightTrend=athleteMetrics.filter(m=>dateOnly(m.metric_date)>=cutoff&&m.weight_kg).map(m=>({date:dateOnly(m.metric_date).slice(5),weight:weightUnit==='st'?kgToStoneDecimal(m.weight_kg):Number(m.weight_kg||0)}));
+  const volumeByDay=Array.from({length:Math.min(periodDays,14)},(_,i)=>{const date=iso(addDays(new Date(),-Math.min(periodDays,14)+1+i));return {date:date.slice(5),volume:Math.round(setHistory.filter(s=>s.date===date).reduce((n,s)=>n+s.volume,0))}});
+  const completedSessions=filteredEvents.filter(e=>e.status==='completed').length;
+  const streak=calcStreak(logs,events);
+  return <div className="progressV4">
+    <div className="periodTabs"><button className={period==='week'?'active':''} onClick={()=>setPeriod('week')}>Week</button><button className={period==='month'?'active':''} onClick={()=>setPeriod('month')}>Month</button><button className={period==='three'?'active':''} onClick={()=>setPeriod('three')}>3 Months</button></div>
+    <div className="progressTopGrid"><section className="featureCard weightTrendCard"><div className="cardLabel"><Weight/><span>Body Weight Trend</span></div><strong>{formatWeight(profile.weight_kg,weightUnit)}</strong>{weightTrend.length>1&&<span className="trendChange">{(weightTrend[weightTrend.length-1].weight-weightTrend[0].weight).toFixed(1)} {weightUnit==='st'?'st':'kg'} in period</span>}<div className="miniChart"><ResponsiveContainer width="100%" height="100%"><LineChart data={weightTrend}><XAxis dataKey="date"/><YAxis domain={['dataMin - 1','dataMax + 1']}/><Tooltip/><Line type="monotone" dataKey="weight" stroke="#36eda0" strokeWidth={3}/></LineChart></ResponsiveContainer></div></section>
+      <section className="featureCard oneRmCard"><div className="cardLabel"><BarChart3/><span>Estimated 1RM</span></div>{bestByExercise.length?bestByExercise.slice(0,4).map(item=><div className="oneRmRow" key={item.name}><span>{item.name}</span><b>{item.best.estimated1rm} kg</b></div>):<p className="muted">Log weighted sets to calculate estimated one-rep max values.</p>}</section></div>
+
+    <section className="panel liftProgressPanel"><div className="row between"><div><h3>Exercise Progress</h3><p className="muted">Track working weight and estimated one-rep max from logged sets.</p></div><select value={selectedExercise} onChange={e=>setSelectedExercise(e.target.value)}><option value="">Choose exercise</option>{exerciseNames.map(name=><option key={name}>{name}</option>)}</select></div>{selectedExercise&&chartData.length?<div className="liftChartGrid"><div className="chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip/><Line type="monotone" dataKey="weight" stroke="#38eda0" strokeWidth={3} name="Weight kg"/><Line type="monotone" dataKey="estimated1rm" stroke="#3aa9ff" strokeWidth={2} name="Estimated 1RM"/></LineChart></ResponsiveContainer></div><div className="recentSets"><h4>Recent Sets</h4>{selectedHistory.slice(-6).reverse().map(row=><div key={row.id}><span>{row.date}</span><b>{row.weight}kg × {row.reps}</b><em>1RM {row.estimated1rm}kg</em></div>)}</div></div>:<div className="emptyDraft"><Dumbbell/><h4>No weighted logs yet</h4><p>Complete and save weighted exercise sets to populate progress charts.</p></div>}</section>
+
+    <div className="progressBottomGrid"><section className="featureCard recentPrCard"><div className="cardLabel"><Trophy/><span>Recent PRs</span></div>{recentPRs.length?recentPRs.map(item=><div className="prRow" key={item.name}><Award/><div><b>{item.name}</b><span>{item.best.weight}kg × {item.best.reps}</span></div><em>1RM {item.best.estimated1rm}kg</em></div>):<p className="muted">Personal records will appear after weighted sets are logged.</p>}</section><section className="featureCard volumeCard"><div className="cardLabel"><BarChart3/><span>Volume Lifted</span></div><strong>{Math.round(totalVolume).toLocaleString('en-GB')} kg</strong><span>{completedSessions} sessions · {streak} day streak</span><div className="miniChart"><ResponsiveContainer width="100%" height="100%"><BarChart data={volumeByDay}><XAxis dataKey="date"/><Tooltip/><Bar dataKey="volume" fill="#35dca1"/></BarChart></ResponsiveContainer></div></section></div>
+  </div>
 }
 function achievementCount(type: AchievementType, logs: WorkoutLog[], events: CalendarEvent[]) {
   const completedSessions = events.filter(e=>e.status==='completed');
@@ -1516,17 +1761,26 @@ function WorkoutAssignment({plans,athletes,users,events,setEvents}:{plans:Workou
 }
 
 function AthleteCreator({users,setUsers,athletes,setAthletes}:{users:AppUser[];setUsers:(u:AppUser[])=>void;athletes:AthleteProfile[];setAthletes:(a:AthleteProfile[])=>void}){
-  const [name,setName]=useState(''); const [email,setEmail]=useState(''); const [role,setRole]=useState<AppUser['role']>('athlete'); const [status,setStatus]=useState('');
+  const [name,setName]=useState(''); const [email,setEmail]=useState(''); const [role,setRole]=useState<AppUser['role']>('athlete'); const [status,setStatus]=useState(''); const [busy,setBusy]=useState(false);
   async function create(){
-    const draft={id:crypto.randomUUID(),name,email,role,gym:'FMA Chester',goal:'Build consistent training habits.'} as AthleteProfile;
-    setStatus('Creating athlete profile in Supabase...');
-    const created = await createRemoteAthleteProfile(draft);
-    const nextAthletes=canonicaliseAthletes([...athletes, created]); setAthletes(nextAthletes); setStorage('bbb_athletes', nextAthletes);
-    setUsers(canonicaliseUsers([...users,{id:`profile-${created.id}`,email,name,role,athlete_id:created.id}]));
-    setStatus(`Created ${name}. Now create their Supabase Auth user in Supabase > Authentication > Add user using the same email, then set their password or send a reset email.`);
-    setName(''); setEmail('');
+    setBusy(true);setStatus('Creating secure athlete profile and invitation…');
+    try {
+      if (supabase) {
+        const { data, error } = await supabase.functions.invoke('invite-athlete', { body:{ name, email, role, gym:'FMA Chester', goal:'Build consistent training habits.' } });
+        if (!error && data?.athlete) {
+          const created=mapRemoteAthleteToLocal(data.athlete);const next=canonicaliseAthletes([...athletes,created]);setAthletes(next);setStorage('bbb_athletes',next);
+          setUsers(canonicaliseUsers([...users,{id:`profile-${created.id}`,email,name,role,athlete_id:created.id}]));
+          setStatus(`Created ${name} and sent a secure Supabase invitation to ${email}.`);setName('');setEmail('');return;
+        }
+        if (error) console.warn('Invite athlete Edge Function unavailable:', error);
+      }
+      const draft={id:crypto.randomUUID(),name,email,role,gym:'FMA Chester',goal:'Build consistent training habits.'} as AthleteProfile;
+      const created=await createRemoteAthleteProfile(draft);const next=canonicaliseAthletes([...athletes,created]);setAthletes(next);setStorage('bbb_athletes',next);
+      setUsers(canonicaliseUsers([...users,{id:`profile-${created.id}`,email,name,role,athlete_id:created.id}]));
+      setStatus(`Profile created. Deploy the invite-athlete Edge Function to send secure invitations automatically; until then create the matching Auth user in Supabase Authentication.`);setName('');setEmail('');
+    } finally {setBusy(false);}
   }
-  return <section className="panel"><h3>Create Athlete</h3><p className="muted">Creates the cloud athlete profile for testing. For secure login, create the matching Supabase Auth user with the same email in Supabase Authentication.</p><div className="grid three"><label>Name<input value={name} onChange={e=>setName(e.target.value)} placeholder="Athlete name"/></label><label>Email<input value={email} onChange={e=>setEmail(e.target.value)} placeholder="athlete@email.com"/></label><label>Role<select value={role} onChange={e=>setRole(e.target.value as AppUser['role'])}><option value="athlete">Athlete</option><option value="coach">Coach</option><option value="admin">Admin</option></select></label></div><button className="primary" onClick={create} disabled={!name||!email}><Users size={16}/>Create cloud profile</button>{status && <div className="status">{status}</div>}{canonicaliseAthletes(athletes).map(a=><div className="preview" key={a.id}><b>{a.name}</b><span>{a.email}</span><em>{a.gym}</em></div>)}</section>
+  return <section className="panel"><h3>Create Athlete</h3><p className="muted">Creates a separated cloud profile and, when the V4 Edge Function is deployed, sends a secure Supabase Auth invitation.</p><div className="grid three"><label>Name<input value={name} onChange={e=>setName(e.target.value)} placeholder="Athlete name"/></label><label>Email<input value={email} onChange={e=>setEmail(e.target.value)} placeholder="athlete@email.com"/></label><label>Role<select value={role} onChange={e=>setRole(e.target.value as AppUser['role'])}><option value="athlete">Athlete</option><option value="coach">Coach</option><option value="admin">Admin</option></select></label></div><button className="primary" onClick={create} disabled={!name||!email||busy}><Users size={16}/>{busy?'Creating…':'Create & invite athlete'}</button>{status&&<div className="status">{status}</div>}{canonicaliseAthletes(athletes).map(a=><div className="preview" key={a.id}><b>{a.name}</b><span>{a.email}</span><em>{a.gym}</em></div>)}</section>
 }
 function ManualExercise({exercises,setExercises}:{exercises:Exercise[];setExercises:(e:Exercise[])=>void}){
   const [name,setName]=useState(''); const [description,setDescription]=useState(''); const [body,setBody]=useState('waist'); const [target,setTarget]=useState('abs'); const [category,setCategory]=useState('strength'); const [equipment,setEquipment]=useState('body weight'); const [location,setLocation]=useState('Home'); const [videoUrl,setVideoUrl]=useState('');

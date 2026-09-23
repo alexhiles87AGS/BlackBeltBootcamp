@@ -1,6 +1,6 @@
 {
-  "name": "blackbeltbootcamp-v3-cloud-sync-auth",
-  "version": "3.0.0",
+  "name": "blackbeltbootcamp-v4",
+  "version": "4.0.0",
   "private": true,
   "type": "module",
   "scripts": {

@@ -163,3 +163,34 @@ export type AppSetting = {
   key: string;
   value: string;
 };
+
+export type NutritionTarget = {
+  id: string;
+  athlete_id: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fats_g: number;
+  water_ml: number;
+  effective_date?: string;
+  remote_id?: string;
+};
+
+export type MealType = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack' | 'Hydration';
+
+export type NutritionEntry = {
+  id: string;
+  athlete_id: string;
+  entry_date: string;
+  meal_type: MealType;
+  name: string;
+  serving?: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fats_g: number;
+  water_ml: number;
+  notes?: string;
+  created_at?: string;
+  remote_id?: string;
+};

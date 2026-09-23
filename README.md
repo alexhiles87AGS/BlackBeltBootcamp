@@ -1,34 +1,101 @@
-# BlackBeltBootcamp V2.2.14 — Achievement Manager
+# BlackBeltBootcamp V4.0
 
-This package builds on the final working V2.2.13 app and adds the Admin Console Achievement Manager.
+BlackBeltBootcamp V4 is the major mobile-first upgrade of the existing React/Vite/Netlify/Supabase training platform for Alex and James Hiles.
 
-## Included
+## What is new in V4
 
-- Achievement Manager added to Admin Console.
-- Create, edit, deactivate and delete badges from the app.
-- Fixed achievement type list so counters work automatically.
-- Badges can sync to Supabase when the `badges` table and policies allow insert/update/delete.
-- Local fallback remains available if Supabase badge write is blocked.
-- Existing workout assignment, GMT calendar, clean-start and admin deletion fixes retained.
+### Mobile-first visual overhaul
 
-## Deployment
+- New premium dark navy/teal design system.
+- Cleaner iPhone-optimised top bar, profile chip, drawer menu and bottom navigation.
+- Athlete-focused dashboard rather than a feature directory.
+- Responsive training calendar, workout builder, nutrition and progress views.
+- Five UI preview images are included in `docs/v4-ui-previews/`.
+
+### Live cloud refresh
+
+- Refreshes cloud data on login and when the relevant page opens.
+- Refreshes when the browser/app regains focus or comes back online.
+- Supabase Realtime subscriptions refresh assignments, sessions, workout logs, metrics, achievements, settings and nutrition records.
+- Manual cloud refresh control and a visible last-synced indicator remain available.
+
+### Workout Builder
+
+- Preview an exercise and its video before adding it to a draft workout.
+- Filter by body area and target muscle.
+- Prevent accidental duplicate additions.
+- Reorder draft exercises before saving.
+- Edit sets, reps and planned weight.
+- Retains saved workout editing, athlete-specific copies and calendar assignment.
+
+### Nutrition tracking
+
+- Athlete-specific daily targets for calories, protein, carbohydrates, fats and water.
+- Meal categories for breakfast, lunch, dinner, snacks and hydration.
+- Add and remove entries throughout the day.
+- Daily totals and remaining-target dashboard.
+- Cloud persistence across devices.
+
+### Progress and strength analytics
+
+- Body-weight trend over week/month/three-month ranges.
+- Per-exercise working-weight history.
+- Estimated one-rep max using the Epley calculation from completed sets.
+- Recent sets, personal-record summaries and volume lifted.
+- Dashboard achievements remain ordered by nearest completion.
+
+### Retained V3 capabilities
+
+- Supabase Auth, password reset and protected roles.
+- Cross-device athlete profiles, programmes, sessions and workout logs.
+- Admin athlete creation and invitation workflow.
+- Admin athlete review, workout results and diary controls.
+- FMA class sessions, badge manager, exercise importer and video library.
+
+## Local setup
 
 ```bash
 npm install
-npm run build
-git add .
-git commit -m "Add admin achievement manager"
-git push
+npm run dev
 ```
 
-## Optional Supabase SQL
+Production build:
 
-Run `supabase/schema_v2214_badge_manager.sql` only if Achievement Manager changes do not persist to Supabase.
+```bash
+npm run build
+```
 
+## Environment variables
 
-## V3.0.1 Badge + Weight Preference Patch
+Create `.env` locally and set the same values in Netlify:
 
-- Achievement Manager now treats Supabase as the source of truth, including inactive achievements, so deleted/deactivated badges should not immediately reappear from local seed data.
-- Deleted badges are tombstoned locally to stop old seeded badges returning.
-- Body weight can now be entered/displayed in kilograms or stone/pounds as a profile preference.
-- Optional SQL: `supabase/schema_v301_badges_weight_preferences.sql` adds the `weight_unit` profile column and refreshes badge RLS/delete/update policies.
+```text
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_ANON_KEY=YOUR_PUBLISHABLE_OR_ANON_KEY
+```
+
+## Required V4 database update
+
+Run this file once in Supabase SQL Editor after the existing V3 schema is in place:
+
+```text
+supabase/schema_v4_major_update.sql
+```
+
+It creates nutrition tables, RLS policies, indexes and Realtime publication entries.
+
+## Athlete invitation function
+
+For secure in-app creation of new Auth users, deploy:
+
+```text
+supabase/functions/invite-athlete/index.ts
+```
+
+Instructions are in `V4_DEPLOYMENT_GUIDE.md`.
+
+## Notes
+
+- Supabase is the source of truth; local storage is retained only as a fast cache/resilience layer.
+- Existing exercises and videos are not re-imported or reset by this update.
+- V4 does not deliberately wipe programmes, sessions, logs, profiles or achievement data.
