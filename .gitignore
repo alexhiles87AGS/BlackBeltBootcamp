@@ -3,3 +3,8 @@ dist
 .env
 .env.txt
 .DS_Store
+qa/
+qa43/
+qa-original-vite.config.txt
+qa43-original-vite.config.txt
+*.tsbuildinfo

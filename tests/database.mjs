@@ -1,0 +1,82 @@
+import {PGlite} from '@electric-sql/pglite';
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const pg=new PGlite();let checks=0;const expect=(a,b)=>{assert.deepEqual(a,b);checks++};
+try{
+ await pg.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}');
+ create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ create function auth.jwt() returns jsonb language sql stable as $$select coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb$$;
+ create table public.exercises(id uuid primary key default gen_random_uuid(),exercise_id text unique);create table public.exercise_instructions(id uuid primary key default gen_random_uuid());
+ create publication supabase_realtime;grant usage on schema auth,public to authenticated;grant execute on all functions in schema auth to authenticated;`);
+ // Build the historical baseline in this disposable database only.
+ const baseline=fs.readFileSync('supabase/schema_v3_cloud_sync_auth.sql','utf8').replace('create extension if not exists pgcrypto;','');
+ await pg.exec(baseline);
+ await pg.exec(fs.readFileSync('supabase/schema_v4_major_update.sql','utf8').replace('create extension if not exists pgcrypto;',''));
+ await pg.exec(`grant select,insert,update,delete on all tables in schema public to authenticated;`);
+ // Reproduce the inspected live schema gap in this disposable database only.
+ await pg.exec(`drop table nutrition_entries,nutrition_targets;
+ alter table athlete_profiles drop column weight_unit;
+ alter table workout_logs drop column log_date,drop column session_type,drop column exercise_id,drop column exercise_name,drop column sets,drop column reps,drop column weight,drop column rpe,drop column completed,drop column created_at;
+ create table public.sessions(id uuid primary key);
+ alter table workout_logs drop constraint workout_logs_session_id_fkey;
+ alter table workout_logs add constraint legacy_session_fk foreign key(session_id) references public.sessions(id);
+ alter table fma_classes drop column is_active;
+ alter table fma_classes add column active boolean default true;
+ insert into fma_classes(class_name,active)values('Inactive legacy class',false);`);
+ await pg.exec(fs.readFileSync('supabase/migration_v43_reliability.sql','utf8'));
+ await pg.exec(fs.readFileSync('supabase/migration_v43_reliability.sql','utf8')); // Re-application is non-destructive.
+ expect((await pg.query("select is_active from fma_classes where class_name='Inactive legacy class'")).rows[0].is_active,false);
+ expect((await pg.query("select count(*)::int n from information_schema.columns where table_schema='public' and table_name='workout_logs' and column_name in ('created_at','exercise_id','log_date','sets')")).rows[0].n,4);
+ expect((await pg.query("select count(*)::int n from pg_constraint where conrelid='workout_logs'::regclass and confrelid='training_sessions'::regclass")).rows[0].n,1);
+
+ const a='10000000-0000-4000-8000-000000000001',j='10000000-0000-4000-8000-000000000002';
+ await pg.query(`insert into auth.users(id,email)values($1,'alex.hiles.ags@gmail.com'),($2,'james.hiles@blackbeltbootcamp.app')`,[a,j]);
+ const profiles=(await pg.query('select id,email from athlete_profiles')).rows;
+ const ap=profiles.find(p=>p.email==='alex.hiles.ags@gmail.com').id,jp=profiles.find(p=>p.email==='james.hiles@blackbeltbootcamp.app').id;
+ await pg.query(`update athlete_profiles set auth_user_id=case when id=$1 then $2::uuid else $3::uuid end`,[ap,a,j]);
+ await pg.query(`insert into user_profiles(auth_user_id,email,role,athlete_id)values($1,'alex.hiles.ags@gmail.com','admin',$2),($3,'james.hiles@blackbeltbootcamp.app','athlete',$4)`,[a,ap,j,jp]);
+ async function as(id,email){await pg.exec('reset role');await pg.query("select set_config('request.jwt.claim.sub',$1,false),set_config('request.jwt.claims',$2,false)",[id,JSON.stringify({email})]);await pg.exec('set role authenticated');}
+ const id='20000000-0000-4000-8000-000000000001';const mutation='30000000-0000-4000-8000-000000000001';
+ const plan={id,name:'Coach workout',focus:'Strength',session_type:'Gym',owner_athlete_id:null,is_template:true};const exercises=[{exercise_id:'squat',exercise_name:'Squat',planned_sets:3,planned_reps:'8',planned_weight:'30'}];
+ await as(a,'alex.hiles.ags@gmail.com');
+ const save=async(p,e,v,m)=>(await pg.query('select bbb_save_programme_v43($1,$2,$3,$4) as row',[JSON.stringify(p),JSON.stringify(e),v,m])).rows[0].row;
+ let row=await save(plan,exercises,null,mutation);expect(row.sync_version,1);
+ row=await save(plan,exercises,null,mutation);expect(row.sync_version,1);expect((await pg.query('select count(*)::int as n from workout_programmes')).rows[0].n,1);
+ row=await save({...plan,name:'Updated'},exercises,1,'30000000-0000-4000-8000-000000000002');expect(row.sync_version,2);
+ await assert.rejects(save({...plan,name:'Stale edit'},exercises,1,'30000000-0000-4000-8000-000000000003'),/BBB_CONFLICT/);checks++;
+ await assert.rejects(save({...plan,name:'Broken transaction'},[{...exercises[0],planned_sets:0}],2,'30000000-0000-4000-8000-000000000004'),/Sets must/);checks++;
+ expect((await pg.query('select name,sync_version from workout_programmes where id=$1',[id])).rows[0],{name:'Updated',sync_version:2});expect((await pg.query('select count(*)::int as n from workout_programme_exercises where programme_id=$1',[id])).rows[0].n,1);
+ await as(j,'james.hiles@blackbeltbootcamp.app');
+ await assert.rejects(save({...plan,name:'Athlete changed template'},exercises,2,'30000000-0000-4000-8000-000000000005'),/not permitted|row-level security|BBB_CONFLICT/);checks++;
+ await assert.rejects(pg.query('update workout_programme_exercises set planned_sets=99 where programme_id=$1 returning *',[id]).then(r=>{if(!r.rows.length)throw new Error('not permitted')}),/not permitted|row-level/);checks++;
+ const personal={...plan,id:'20000000-0000-4000-8000-000000000002',owner_athlete_id:jp,is_template:false};row=await save(personal,exercises,null,'30000000-0000-4000-8000-000000000006');expect(row.owner_athlete_id,jp);
+ const write=async(table,data,v,m)=>(await pg.query('select bbb_save_record_v43($1,$2,$3,$4) as row',[table,JSON.stringify(data),v,m])).rows[0].row;
+ const food={id:'40000000-0000-4000-8000-000000000001',athlete_id:jp,entry_date:'2026-10-24',meal_type:'Lunch',name:'Rice bowl',calories:500,protein_g:35,carbs_g:55,fats_g:12,water_ml:0};
+ row=await write('nutrition_entries',food,null,'50000000-0000-4000-8000-000000000001');expect(row.sync_version,1);
+ row=await write('nutrition_entries',food,null,'50000000-0000-4000-8000-000000000001');expect(row.sync_version,1);
+ await assert.rejects(write('nutrition_entries',{...food,id:'40000000-0000-4000-8000-000000000002',athlete_id:ap},null,'50000000-0000-4000-8000-000000000002'),/row-level security/);checks++;
+ await assert.rejects(write('nutrition_entries',{...food,calories:-3},1,'50000000-0000-4000-8000-000000000003'),/negative/);checks++;
+ await assert.rejects(pg.query("update athlete_profiles set role='admin' where id=$1",[jp]),/administrator/);checks++;
+ const profileVersion=(await pg.query('select sync_version from athlete_profiles where id=$1',[jp])).rows[0].sync_version;row=await write('athlete_profiles',{id:jp,name:'James Hiles',gym:'FMA Chester'},profileVersion,'50000000-0000-4000-8000-000000000004');expect(row.sync_version,profileVersion+1);
+ await assert.rejects(write('athlete_profiles',{id:jp,role:'admin'},1,'50000000-0000-4000-8000-000000000005'),/Unsupported record field/);checks++;
+ await assert.rejects(pg.query("select bbb_archive_reset_v43('RESET ALL TRAINING')"),/administrator/);checks++;
+ await as(a,'alex.hiles.ags@gmail.com');
+ await pg.query("update nutrition_entries set calories=651 where id=$1",[food.id]);
+ const legacyEdit=(await pg.query('select sync_version,last_mutation_id from nutrition_entries where id=$1',[food.id])).rows[0];expect(legacyEdit,{sync_version:2,last_mutation_id:null});
+ await assert.rejects(write('nutrition_entries',{...food,calories:700},1,'50000000-0000-4000-8000-000000000006'),/BBB_CONFLICT/);checks++;
+ const session={id:'60000000-0000-4000-8000-000000000001',athlete_id:jp,programme_id:id,session_date:'2026-10-25',title:'Assigned session',session_type:'Gym',status:'planned'};
+ row=await write('training_sessions',session,null,'70000000-0000-4000-8000-000000000001');expect(row.session_date,'2026-10-25');
+ const workoutLog={id:'80000000-0000-4000-8000-000000000001',athlete_id:jp,session_id:session.id,log_date:'2026-10-25',exercise_id:'squat',exercise_name:'Squat',sets:[{set_number:1,reps:'8',weight:'30',completed:true}],completed:false};
+ await write('workout_logs',workoutLog,null,'90000000-0000-4000-8000-000000000001');
+ await assert.rejects(write('workout_logs',{...workoutLog,id:'80000000-0000-4000-8000-000000000002'},null,'90000000-0000-4000-8000-000000000002'),/BBB_CONFLICT/);checks++;
+ row=await write('training_sessions',{id:session.id,status:'completed',effort_rating:7,athlete_notes:'Good session',skipped_exercises:['row']},1,'70000000-0000-4000-8000-000000000002');expect(row.effort_rating,7);expect(row.skipped_exercises,['row']);
+ await assert.rejects(pg.query("select bbb_archive_reset_v43('DELETE')"),/administrator/);checks++;
+ const snapshot=(await pg.query("select bbb_archive_reset_v43('RESET ALL TRAINING') as id")).rows[0].id;
+ expect((await pg.query('select count(*)::int as n from workout_programmes')).rows[0].n,0);expect((await pg.query('select count(*)::int as n from training_recovery_snapshots')).rows[0].n,1);
+ await pg.query("select bbb_restore_training_v43($1,'RESTORE TRAINING')",[snapshot]);expect((await pg.query('select count(*)::int as n from workout_programmes')).rows[0].n,2);
+ await assert.rejects(pg.query("select bbb_restore_training_v43($1,'RESTORE TRAINING')",[snapshot]),/empty training/);checks++;
+ await as(j,'james.hiles@blackbeltbootcamp.app');expect((await pg.query('select count(*)::int as n from training_sessions')).rows[0].n,1);expect((await pg.query('select count(*)::int as n from nutrition_entries')).rows[0].n,1);
+ await as(a,'alex.hiles.ags@gmail.com');await write('training_sessions',{...session,id:'60000000-0000-4000-8000-000000000002',athlete_id:ap},null,'70000000-0000-4000-8000-000000000003');
+ await as(j,'james.hiles@blackbeltbootcamp.app');expect((await pg.query('select count(*)::int as n from training_sessions')).rows[0].n,1);
+ console.log(`PASS database migration, transactions, retries, RLS and recovery (${checks} checks)`);
+}finally{await pg.close();}
