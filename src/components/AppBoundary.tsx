@@ -1,0 +1,2 @@
+import React from 'react';
+export class AppBoundary extends React.Component<{children:React.ReactNode},{failed:boolean}>{state={failed:false};static getDerivedStateFromError(){return {failed:true}}componentDidCatch(error:Error){console.error('BlackBeltBootcamp screen error',error)}render(){return this.state.failed?<main className="authLoading"><h2>This screen couldn’t load</h2><p>Your saved drafts remain on this device.</p><button className="primary" onClick={()=>window.location.reload()}>Reload app</button></main>:this.props.children;}}

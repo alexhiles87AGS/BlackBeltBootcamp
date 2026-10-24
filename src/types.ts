@@ -1,15 +1,15 @@
+export type SyncRecord={sync_state?:'saved'|'pending'|'failed';sync_error?:string;sync_version?:number;last_mutation_id?:string};
 export type UserRole = 'admin' | 'coach' | 'athlete';
 
 export type AppUser = {
   id: string;
   email: string;
-  password?: string;
   name: string;
   role: UserRole;
   athlete_id?: string;
 };
 
-export type AthleteProfile = {
+export type AthleteProfile = SyncRecord & {
   id: string;
   name: string;
   email?: string;
@@ -61,7 +61,7 @@ export type ProgrammeExercise = {
   notes?: string;
 };
 
-export type WorkoutPlan = {
+export type WorkoutPlan = SyncRecord & {
   id: string;
   name: string;
   focus: string;
@@ -76,7 +76,10 @@ export type WorkoutPlan = {
 
 export type SessionType = 'Home' | 'Gym' | 'FMA' | 'MMA' | 'BJJ' | 'Boxing' | 'Kickboxing' | 'Cardio' | 'Mobility' | 'Physio' | 'Recovery' | 'Strength';
 
-export type CalendarEvent = {
+export type CalendarEvent = SyncRecord & {
+  effort_rating?:number;
+  athlete_notes?:string;
+  skipped_exercises?:string[];
   id: string;
   date: string; // ISO date or weekday label for seed data
   title: string;
@@ -101,7 +104,8 @@ export type ExerciseLogSet = {
   completed?: boolean;
 };
 
-export type WorkoutLog = {
+export type WorkoutLog = SyncRecord & {
+  athlete_id?:string;
   id: string;
   remote_id?: string;
   session_id?: string;
@@ -131,7 +135,7 @@ export type AchievementType =
   | 'footwork_sessions'
   | 'completed_workouts';
 
-export type BadgeDefinition = {
+export type BadgeDefinition = SyncRecord & {
   id: string;
   name: string;
   description: string;
@@ -149,7 +153,7 @@ export type Badge = BadgeDefinition & {
   current_count: number;
 };
 
-export type AthleteMetric = {
+export type AthleteMetric = SyncRecord & {
   id: string;
   athlete_id: string;
   metric_date: string;
@@ -165,7 +169,7 @@ export type AppSetting = {
   value: string;
 };
 
-export type NutritionTarget = {
+export type NutritionTarget = SyncRecord & {
   id: string;
   athlete_id: string;
   calories: number;
@@ -179,7 +183,7 @@ export type NutritionTarget = {
 
 export type MealType = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack' | 'Hydration';
 
-export type NutritionEntry = {
+export type NutritionEntry = SyncRecord & {
   id: string;
   athlete_id: string;
   entry_date: string;
