@@ -13,7 +13,22 @@ try{
  await pg.exec(baseline);
  await pg.exec(fs.readFileSync('supabase/schema_v4_major_update.sql','utf8').replace('create extension if not exists pgcrypto;',''));
  await pg.exec(`grant select,insert,update,delete on all tables in schema public to authenticated;`);
+ // Reproduce the inspected live schema gap in this disposable database only.
+ await pg.exec(`drop table nutrition_entries,nutrition_targets;
+ alter table athlete_profiles drop column weight_unit;
+ alter table workout_logs drop column log_date,drop column session_type,drop column exercise_id,drop column exercise_name,drop column sets,drop column reps,drop column weight,drop column rpe,drop column completed,drop column created_at;
+ create table public.sessions(id uuid primary key);
+ alter table workout_logs drop constraint workout_logs_session_id_fkey;
+ alter table workout_logs add constraint legacy_session_fk foreign key(session_id) references public.sessions(id);
+ alter table fma_classes drop column is_active;
+ alter table fma_classes add column active boolean default true;
+ insert into fma_classes(class_name,active)values('Inactive legacy class',false);`);
  await pg.exec(fs.readFileSync('supabase/migration_v43_reliability.sql','utf8'));
+ await pg.exec(fs.readFileSync('supabase/migration_v43_reliability.sql','utf8')); // Re-application is non-destructive.
+ expect((await pg.query("select is_active from fma_classes where class_name='Inactive legacy class'")).rows[0].is_active,false);
+ expect((await pg.query("select count(*)::int n from information_schema.columns where table_schema='public' and table_name='workout_logs' and column_name in ('created_at','exercise_id','log_date','sets')")).rows[0].n,4);
+ expect((await pg.query("select count(*)::int n from pg_constraint where conrelid='workout_logs'::regclass and confrelid='training_sessions'::regclass")).rows[0].n,1);
+
  const a='10000000-0000-4000-8000-000000000001',j='10000000-0000-4000-8000-000000000002';
  await pg.query(`insert into auth.users(id,email)values($1,'alex.hiles.ags@gmail.com'),($2,'james.hiles@blackbeltbootcamp.app')`,[a,j]);
  const profiles=(await pg.query('select id,email from athlete_profiles')).rows;

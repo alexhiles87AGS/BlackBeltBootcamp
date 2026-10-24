@@ -12,7 +12,7 @@ npm run check
 npm run dev
 ```
 
-`check` runs TypeScript, 86 assertions (including a disposable PostgreSQL migration/RLS test), and the production build. Tests never connect to production Supabase.
+`check` runs TypeScript, 89 assertions (including a disposable PostgreSQL migration/RLS test), and the production build. Tests never connect to production Supabase.
 
 Supabase Auth is the only login system. Reads remain controlled: one authenticated-open pull, then manual Sync. Account-scoped caches and a durable write queue provide resilience; local storage never grants authentication. Pending writes retry on authenticated open, connectivity recovery or explicit retry. No background read polling is added.
 

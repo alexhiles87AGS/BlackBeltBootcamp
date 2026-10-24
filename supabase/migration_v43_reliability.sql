@@ -2,6 +2,70 @@
 -- No data reset, no historical migration replay, no Realtime subscription changes.
 begin;
 
+-- Targeted compatibility for the inspected live V4.1 schema. No historical replay.
+alter table public.athlete_profiles add column if not exists weight_unit text not null default 'kg';
+alter table public.workout_logs
+ add column if not exists log_date date not null default current_date,
+ add column if not exists session_type text,
+ add column if not exists exercise_id text,
+ add column if not exists exercise_name text,
+ add column if not exists sets jsonb not null default '[]'::jsonb,
+ add column if not exists reps text,
+ add column if not exists weight text,
+ add column if not exists rpe numeric,
+ add column if not exists completed boolean not null default true,
+ add column if not exists created_at timestamptz not null default now();
+-- The original log table pointed at the obsolete sessions table. Refuse to
+-- change that FK if any existing record cannot be preserved against training_sessions.
+do $$ declare c record;begin
+ for c in select conname from pg_constraint where conrelid='public.workout_logs'::regclass and contype='f'
+ and conkey=array[(select attnum from pg_attribute where attrelid='public.workout_logs'::regclass and attname='session_id')]
+ and confrelid<>'public.training_sessions'::regclass loop
+  if exists(select 1 from public.workout_logs l where l.session_id is not null and not exists(select 1 from public.training_sessions s where s.id=l.session_id)) then raise exception 'Legacy session links need explicit review before V4.3';end if;
+  execute format('alter table public.workout_logs drop constraint %I',c.conname);
+ end loop;
+ if not exists(select 1 from pg_constraint where conrelid='public.workout_logs'::regclass and contype='f' and confrelid='public.training_sessions'::regclass) then
+  alter table public.workout_logs add constraint v43_logs_training_session_fk foreign key(session_id) references public.training_sessions(id) on delete set null;
+ end if;
+end $$;
+create table if not exists public.nutrition_targets(
+ id uuid primary key default gen_random_uuid(),athlete_id uuid not null references public.athlete_profiles(id) on delete cascade,
+ effective_date date not null default current_date,calories numeric not null default 2400,protein_g numeric not null default 180,
+ carbs_g numeric not null default 250,fats_g numeric not null default 70,water_ml numeric not null default 3000,
+ created_at timestamptz not null default now(),updated_at timestamptz not null default now(),unique(athlete_id));
+create table if not exists public.nutrition_entries(
+ id uuid primary key default gen_random_uuid(),athlete_id uuid not null references public.athlete_profiles(id) on delete cascade,
+ entry_date date not null default current_date,meal_type text not null default 'Snack' check(meal_type in ('Breakfast','Lunch','Dinner','Snack','Hydration')),
+ name text not null,serving text,calories numeric not null default 0,protein_g numeric not null default 0,
+ carbs_g numeric not null default 0,fats_g numeric not null default 0,water_ml numeric not null default 0,notes text,
+ created_at timestamptz not null default now(),updated_at timestamptz not null default now());
+do $$ declare t text;begin
+ foreach t in array array['nutrition_targets','nutrition_entries'] loop
+  execute format('alter table public.%I enable row level security',t);
+  execute format('drop policy if exists v43_nutrition_owner on public.%I',t);
+  execute format('create policy v43_nutrition_owner on public.%I for all to authenticated using(public.is_app_admin() or athlete_id=public.current_athlete_profile_id()) with check(public.is_app_admin() or athlete_id=public.current_athlete_profile_id())',t);
+  execute format('grant select,insert,update,delete on public.%I to authenticated',t);
+ end loop;
+end $$;
+create index if not exists nutrition_entries_athlete_date_idx on public.nutrition_entries(athlete_id,entry_date desc);
+create index if not exists workout_logs_athlete_exercise_date_idx on public.workout_logs(athlete_id,exercise_id,log_date desc);
+create index if not exists training_sessions_athlete_date_idx on public.training_sessions(athlete_id,session_date desc);
+-- Preserve the live FMA active flag when introducing the frontend's expected name.
+do $$ begin
+ if not exists(select 1 from information_schema.columns where table_schema='public' and table_name='fma_classes' and column_name='is_active') then
+  alter table public.fma_classes add column is_active boolean not null default true;
+  if exists(select 1 from information_schema.columns where table_schema='public' and table_name='fma_classes' and column_name='active') then update public.fma_classes set is_active=coalesce(active,true);end if;
+ end if;
+end $$;
+-- Explicit table grants remain subject to existing ownership RLS.
+grant select,insert,update,delete on public.workout_logs,public.athlete_metrics,public.training_sessions,public.athlete_profiles,public.workout_programmes,public.workout_programme_exercises to authenticated;
+-- Scope programme details as well as their parent programmes.
+drop policy if exists v43_programme_details_read on public.workout_programme_exercises;
+create policy v43_programme_details_read on public.workout_programme_exercises as restrictive for select to authenticated using(exists(select 1 from public.workout_programmes p where p.id=programme_id));
+-- Require a log's session to belong to its stated athlete, even for crafted API calls.
+drop policy if exists v43_log_session_owner on public.workout_logs;
+create policy v43_log_session_owner on public.workout_logs as restrictive for all to authenticated using(public.is_app_admin() or athlete_id=public.current_athlete_profile_id()) with check(public.is_app_admin() or (athlete_id=public.current_athlete_profile_id() and (session_id is null or exists(select 1 from public.training_sessions s where s.id=session_id and s.athlete_id=public.current_athlete_profile_id()))));
+
 do $$ declare t text; begin
  foreach t in array array['workout_programmes','training_sessions','workout_logs','athlete_metrics','nutrition_entries','nutrition_targets','athlete_profiles'] loop
   execute format('alter table public.%I add column if not exists sync_version integer not null default 0',t);
@@ -125,6 +189,31 @@ revoke all on function public.bbb_save_record_v43(text,jsonb,integer,uuid) from 
 revoke all on function public.bbb_save_programme_v43(jsonb,jsonb,integer,uuid) from public,anon;
 grant execute on function public.bbb_save_record_v43(text,jsonb,integer,uuid) to authenticated;
 grant execute on function public.bbb_save_programme_v43(jsonb,jsonb,integer,uuid) to authenticated;
+
+-- Prevent legacy public write policies from bypassing catalogue role separation.
+do $$ declare t text;op text;begin
+ foreach t in array array['exercises','exercise_instructions'] loop
+  if to_regclass('public.'||t) is not null then
+   foreach op in array array['insert','update','delete'] loop
+    execute format('drop policy if exists %I on public.%I','v43_catalogue_'||op,t);
+    if op='insert' then execute format('create policy %I on public.%I as restrictive for insert to public with check(public.is_app_admin())','v43_catalogue_'||op,t);
+    elsif op='update' then execute format('create policy %I on public.%I as restrictive for update to public using(public.is_app_admin()) with check(public.is_app_admin())','v43_catalogue_'||op,t);
+    else execute format('create policy %I on public.%I as restrictive for delete to public using(public.is_app_admin())','v43_catalogue_'||op,t);end if;
+   end loop;
+  end if;
+ end loop;
+end $$;
+-- Legacy profile roles are also permission-bearing; athletes cannot escalate them.
+create or replace function public.bbb_protect_legacy_role_v43() returns trigger language plpgsql set search_path=public as $$ begin
+ if auth.uid() is not null and not public.is_app_admin() and (new.role is distinct from old.role or new.id is distinct from old.id) then raise exception 'Profile identity and role changes require an administrator.' using errcode='42501';end if;return new;end $$;
+do $$ begin
+ if to_regclass('public.profiles') is not null then
+  drop trigger if exists bbb_protect_legacy_role_v43 on public.profiles;
+  create trigger bbb_protect_legacy_role_v43 before update on public.profiles for each row execute function public.bbb_protect_legacy_role_v43();
+ end if;
+ if to_regprocedure('public.current_role()') is not null then execute 'alter function public."current_role"() set search_path=public,pg_temp';end if;
+ if to_regprocedure('public.handle_new_user()') is not null then execute 'alter function public.handle_new_user() set search_path=public,pg_temp';end if;
+end $$;
 
 -- Whole-training reset: archived server snapshot + delete in one transaction.
 create table if not exists public.training_recovery_snapshots(id uuid primary key default gen_random_uuid(),created_at timestamptz not null default now(),created_by uuid not null default auth.uid(),payload jsonb not null);

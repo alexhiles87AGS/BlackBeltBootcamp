@@ -22,11 +22,11 @@ The reviewed palette uses burgundy `#95122c`, deep ink `#1c0909`, white cards an
 
 - Node 20: TypeScript and production Vite build.
 - 53 production-code assertions: account-scoped cache, signed-out cache access, exact deletion, pending merge, GMT/DST boundaries in three timezones, rest deadlines, durable write order/restart/idempotency, account-switch suppression and storage failures.
-- 33 disposable PostgreSQL assertions: migration, authenticated RLS, atomic programme rollback, version conflicts, duplicate session/exercise logging, nutrition ownership/validation, profile role protection and transactional admin snapshot/reset/restore. Historical schemas were loaded only into this ephemeral test database.
+- 36 disposable PostgreSQL assertions: migration, authenticated RLS, atomic programme rollback, version conflicts, duplicate session/exercise logging, nutrition ownership/validation, profile role protection and transactional admin snapshot/reset/restore. Historical schemas were loaded only into this ephemeral test database.
 - Browser fixtures at 390×844 and 375×667: separate Alex/James views; builder Added/substitution/personal editing; set correction; previous-performance copy; extra sets and refreshed draft; elapsed rest timer; finish review and notes visible to coach after manual Sync; nutrition edit/favourite/water/exact deletion; interrupted upload surviving refresh then replaying exactly once; signed-out login despite cached data; disabled reset until typed confirmation. No production records were used or reset.
 - Neither mobile viewport had horizontal document overflow. Browser checks used an injected test client outside production source; no test Auth implementation is shipped.
 
-These checks do not substitute for live Supabase Auth, production-policy inspection, two real devices or physical iPhone Safari acceptance. The migration has **not** been applied to project `stuxkictgjeascqcsvzi`.
+These checks do not substitute for live Supabase Auth, production-policy inspection, two real devices or physical iPhone Safari acceptance. Live inspection found missing nutrition tables, an obsolete workout-log session foreign key and missing logger/profile/FMA fields. The single targeted V4.3 migration now repairs those gaps without replaying historical schemas or recreating profiles. The disposable test reproduces those exact gaps and verifies repeat application. A private database-side pre-release snapshot of all 26 public tables plus schema/policy/function metadata was saved before these changes. This snapshot is an application-data recovery checkpoint inside the same project, not an external full-project disaster-recovery backup.
 
 ## Rollout order
 
