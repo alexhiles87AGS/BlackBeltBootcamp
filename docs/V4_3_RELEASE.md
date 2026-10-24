@@ -14,6 +14,10 @@ V4.3 retains the approved V4.2 light performance interface built from V4.1, and 
 
 GMT/date-only handling, manual controlled Sync, FMA attendance, achievements and real Supabase Auth are retained. Writes retry in the background; reads do not poll or refresh on focus.
 
+### Burgundy branding refinement
+
+The reviewed palette uses burgundy `#95122c`, deep ink `#1c0909`, white cards and neutral surfaces. A shared vector belt emblem and two-line BlackBelt / BOOTCAMP wordmark replace the generic shield branding across the header, menu and login; the browser favicon matches. Charts and selected states use burgundy too. This refinement changes presentation only. Mobile fixture checks confirm Home, workout, builder Added feedback and header fit at 390×844 and 375×667 without horizontal overflow.
+
 ## Verification completed
 
 - Node 20: TypeScript and production Vite build.

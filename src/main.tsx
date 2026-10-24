@@ -15,6 +15,7 @@ import './styles.css';
 import {storage,setStorage,removeStorage,setCacheOwner,getCacheOwner,scrubLegacyPasswords,removeExact,mergeById,mergePending} from './services/cache';
 import {writeRecord,flushWrites,pendingWrites,confirmedDelete,resolveAthlete,syncMessage} from './services/cloud';
 import {AppBoundary} from './components/AppBoundary';
+import {Brand,BeltMark} from './components/Brand';
 import {CoachingOverview} from './components/CoachingOverview';
 import {AdminRecovery} from './components/AdminRecovery';
 import {NutritionScreen} from './components/NutritionScreen';
@@ -751,7 +752,7 @@ function App() {
   function go(p: Page){ setPage(p); setDrawerOpen(false); window.scrollTo({top:0, behavior:'smooth'}); }
   function openSession(event: CalendarEvent){ setActiveSession(event); setPage('session'); setDrawerOpen(false); }
 
-  if(authLoading)return <main className="authLoading"><Shield/><p>Verifying your account…</p></main>;
+  if(authLoading)return <main className="authLoading"><span className="brandMark"><BeltMark/></span><p>Verifying your account…</p></main>;
   if(!currentUser)return <><LoginScreen users={users} setCurrentUser={hydrateAccount}/>{authError&&<div className="authProblem" role="alert">{authError}<button onClick={()=>window.location.reload()}>Retry account verification</button></div>}</>;
 
   const visibleNav = NAV.filter(n => !n.roles || n.roles.includes(currentUser.role));
@@ -761,14 +762,14 @@ function App() {
   return <div className="appShell v4Shell">
     <header className="topbar v4Topbar">
       <button className="iconButton navTrigger" onClick={()=>setDrawerOpen(true)} aria-label="Open menu" aria-expanded={drawerOpen} aria-controls="app-drawer"><Menu size={25}/></button>
-      <button className="topBrand" onClick={()=>go('dashboard')} aria-label="Go home"><span className="brandShield"><Shield size={24}/></span><div><b>BlackBelt<span className="brandLight">Bootcamp</span></b><span>ATHLETE DEVELOPMENT</span></div></button>
+      <button className="topBrand" onClick={()=>go('dashboard')} aria-label="Go home"><Brand/></button>
       <button className="syncPill" aria-label={syncing?'Syncing':'Sync latest data'} title={displaySyncTime(lastSynced)} onClick={()=>requestSync('manual')} disabled={syncing}><Cloud size={16}/><span>{syncing ? 'Syncing…' : displaySyncTime(lastSynced)}</span><RefreshCw size={15} className={syncing ? 'spinning' : ''}/></button>
       <button className="profileChip" aria-label="Open profile" onClick={()=>go('profile')}><span className="avatar">{profile.profile_photo_url ? <img src={profile.profile_photo_url} alt=""/> : getInitials(profile.name)}</span><span><b>{currentUser.name}</b><em>{titleCase(currentUser.role)}</em></span><ChevronRight size={17}/></button>
     </header>
 
     {drawerOpen && <div className="drawerBackdrop" onClick={()=>setDrawerOpen(false)} />}
     <aside id="app-drawer" className={`drawer v4Drawer ${drawerOpen ? 'open' : ''}`} role="dialog" aria-modal={drawerOpen || undefined} aria-label="App menu" aria-hidden={!drawerOpen} {...(!drawerOpen?{inert:''}:{})}>
-      <div className="drawerHead"><div className="brand"><span className="brandShield"><Shield size={24}/></span><div><h1>BlackBeltBootcamp</h1><span>Your training, connected</span></div></div><button className="iconButton" aria-label="Close menu" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
+      <div className="drawerHead"><Brand/><button className="iconButton" aria-label="Close menu" onClick={()=>setDrawerOpen(false)}><X size={20}/></button></div>
       <button className="drawerUser drawerUserButton" onClick={()=>go('profile')}><span className="avatar large">{getInitials(profile.name)}</span><span className="drawerIdentity"><b>{currentUser.name}</b><span>{currentUser.email}</span><em>{titleCase(currentUser.role)} profile</em></span><ChevronRight size={18}/></button>
       <nav>{['Athlete','Training','Progress','Admin'].map(group => {
         const links = visibleNav.filter(n=>n.group===group);
@@ -840,7 +841,7 @@ function LoginScreen({setCurrentUser}:{users:AppUser[]; setCurrentUser:(u:AppUse
     const {error}=await supabase.auth.resetPasswordForEmail(target,{redirectTo:window.location.origin});
     setStatus(error?error.message:`Password reset email sent to ${target}.`);
   }
-  return <main className="loginPage v4Login"><section className="loginVisual"><span className="brandShield giant"><Shield/></span><span className="eyebrow">BlackBeltBootcamp</span><h1>Built for<br/>the work.</h1><p>Your training. Your progress. Every session counts.</p><div className="loginPromises"><span><CheckCircle2/>Cloud synced</span><span><CheckCircle2/>Coach assigned</span><span><CheckCircle2/>Athlete focused</span></div></section><section className="loginCard"><div className="loginBrand"><span className="brandShield"><Shield/></span><div><h2>Welcome back</h2><p>Sign in to continue your training.</p></div></div><form onSubmit={login} className="loginForm"><label>Email<input value={email} onChange={e=>setEmail(e.target.value)} type="email" autoCapitalize="none" autoCorrect="off" autoComplete="email" placeholder="you@example.com"/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password"/></label>{status&&<div className={`status ${/unable|error|invalid/i.test(status)?'error':''}`}>{status}</div>}<button className="primary big wide" type="submit" disabled={!email||!password||busy}>{busy?'Signing in…':'Sign in'}<ChevronRight/></button></form><button className="forgotButton" onClick={()=>setShowReset(v=>!v)}>Forgot your password?</button>{showReset&&<div className="passwordResetBox"><label>Password reset email<input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="Use login email if blank"/></label><button onClick={resetPassword}><KeyRound size={16}/>Send reset link</button></div>}<p className="secureNote"><Shield size={15}/>Private account · training connected across devices</p></section></main>
+  return <main className="loginPage v4Login"><section className="loginVisual"><Brand className="brandIdentityHero"/><h1>Built for<br/>the work.</h1><p>Your training. Your progress. Every session counts.</p><div className="loginPromises"><span><CheckCircle2/>Cloud synced</span><span><CheckCircle2/>Coach assigned</span><span><CheckCircle2/>Athlete focused</span></div></section><section className="loginCard"><div className="loginBrand"><div><h2>Welcome back</h2><p>Sign in to continue your training.</p></div></div><form onSubmit={login} className="loginForm"><label>Email<input value={email} onChange={e=>setEmail(e.target.value)} type="email" autoCapitalize="none" autoCorrect="off" autoComplete="email" placeholder="you@example.com"/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password"/></label>{status&&<div className={`status ${/unable|error|invalid/i.test(status)?'error':''}`}>{status}</div>}<button className="primary big wide" type="submit" disabled={!email||!password||busy}>{busy?'Signing in…':'Sign in'}<ChevronRight/></button></form><button className="forgotButton" onClick={()=>setShowReset(v=>!v)}>Forgot your password?</button>{showReset&&<div className="passwordResetBox"><label>Password reset email<input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="Use login email if blank"/></label><button onClick={resetPassword}><KeyRound size={16}/>Send reset link</button></div>}<p className="secureNote"><Shield size={15}/>Private account · training connected across devices</p></section></main>
 }
 function Dashboard({logs,events,badges,profile,focusText,target,nutritionEntries,plans,setPage,openSession}:{logs:WorkoutLog[];events:CalendarEvent[];badges:Badge[];profile:AthleteProfile;focusText:string;target:NutritionTarget;nutritionEntries:NutritionEntry[];plans:WorkoutPlan[];setPage:(p:Page)=>void;openSession:(e:CalendarEvent)=>void}) {
   const today = todayISO();
